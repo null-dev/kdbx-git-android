@@ -49,7 +49,7 @@ class WebDavClient(private val config: ServerConfig) {
             .build()
         http.newCall(request).execute().use { response ->
             response.requireSuccess()
-            response.body?.bytes() ?: throw WebDavException(-1, "Empty response body")
+            response.body.bytes()
         }
     }
 

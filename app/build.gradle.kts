@@ -14,12 +14,12 @@ configurations.all {
 
 android {
     namespace   = "ax.nd.kdbxgit.android"
-    compileSdk  = 35
+    compileSdk  = 36
 
     defaultConfig {
         applicationId    = "ax.nd.kdbxgit.android"
         minSdk           = 26
-        targetSdk        = 35
+        targetSdk        = 36
         versionCode      = 1
         versionName      = "1.0"
 
