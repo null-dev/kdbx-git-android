@@ -52,7 +52,6 @@ fun SettingsScreen(
 
     var serverUrl       by rememberSaveable { mutableStateOf(current?.serverUrl       ?: "") }
     var clientId        by rememberSaveable { mutableStateOf(current?.clientId        ?: "") }
-    var username        by rememberSaveable { mutableStateOf(current?.username        ?: "") }
     var password        by rememberSaveable { mutableStateOf(current?.password        ?: "") }
     var customCaCert    by rememberSaveable { mutableStateOf(current?.customCaCertPem ?: "") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
@@ -62,7 +61,6 @@ fun SettingsScreen(
         if (serverUrl.isEmpty() && current != null) {
             serverUrl    = current!!.serverUrl
             clientId     = current!!.clientId
-            username     = current!!.username
             password     = current!!.password
             customCaCert = current!!.customCaCertPem ?: ""
         }
@@ -121,17 +119,6 @@ fun SettingsScreen(
             Spacer(Modifier.height(12.dp))
 
             OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Username") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("Password") },
@@ -171,17 +158,14 @@ fun SettingsScreen(
 
             Button(
                 onClick = {
-                    if (serverUrl.isBlank() || clientId.isBlank() ||
-                        username.isBlank() || password.isEmpty()
-                    ) {
+                    if (serverUrl.isBlank() || clientId.isBlank() || password.isEmpty()) {
                         scope.launch { snackbarHostState.showSnackbar("All fields are required") }
                         return@Button
                     }
                     viewModel.save(
-                        serverUrl    = serverUrl,
-                        clientId     = clientId,
-                        username     = username,
-                        password     = password,
+                        serverUrl       = serverUrl,
+                        clientId        = clientId,
+                        password        = password,
                         customCaCertPem = customCaCert.takeIf { it.isNotBlank() },
                     )
                     scope.launch { snackbarHostState.showSnackbar("Settings saved") }

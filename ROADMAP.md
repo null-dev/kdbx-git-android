@@ -17,7 +17,7 @@ server.
 | `PUT /dav/{client_id}/database.kdbx` | Upload a modified KDBX; server merges it into `main` |
 | `GET /sync/{client_id}/events` | SSE stream; fires `branch-updated` when `main` advances — **not currently used, see server push below** |
 
-Wire format: raw, encrypted KDBX 4.x bytes. Auth: HTTP Basic.
+Wire format: raw, encrypted KDBX 4.x bytes. Auth: HTTP Basic (username = client ID, password = configured password).
 
 The server does **not** implement ETags or conditional request headers. `Last-Modified` is
 always `now()`, so it cannot be used for change detection.
@@ -286,7 +286,7 @@ collected in the ViewModel, so new entries appear automatically.
 | `SyncWorker` | WorkManager `CoroutineWorker`; runs all sync triggers (WRITE, MANUAL, PERIODIC, CONNECTIVITY); calls `setForeground()` to show a brief notification only while actively syncing |
 | `SyncLogEntry` / `SyncLogDao` | Room entity + DAO; capped at 200 entries |
 | `MainViewModel` | Exposes `Flow<List<SyncLogEntry>>` and `syncStatus` to `MainActivity`; delegates manual sync to `SyncRepository` |
-| `SettingsRepository` | Stores server URL, client ID, username, password (EncryptedSharedPreferences) |
+| `SettingsRepository` | Stores server URL, client ID, password (EncryptedSharedPreferences); username = client ID |
 
 ---
 
@@ -296,7 +296,7 @@ collected in the ViewModel, so new entries appear automatically.
 
 - [x] Create Android project (Kotlin, min SDK 26, target SDK 35)
 - [x] Add dependencies: OkHttp, Kotlin Coroutines, WorkManager, AndroidX Security, Room
-- [x] `SettingsScreen` (Compose) to configure server URL, client ID, credentials
+- [x] `SettingsScreen` (Compose) to configure server URL, client ID, password
 - [x] `SettingsRepository` backed by `EncryptedSharedPreferences`
 - [x] Basic app icon and manifest
 

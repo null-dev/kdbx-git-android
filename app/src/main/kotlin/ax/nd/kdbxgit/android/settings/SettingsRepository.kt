@@ -25,25 +25,22 @@ class SettingsRepository(context: Context) {
     val serverConfig: StateFlow<ServerConfig?> = _serverConfig.asStateFlow()
 
     private fun loadConfig(): ServerConfig? {
-        val url      = prefs.getString(KEY_SERVER_URL,      null) ?: return null
-        val clientId = prefs.getString(KEY_CLIENT_ID,       null) ?: return null
-        val username = prefs.getString(KEY_USERNAME,        null) ?: return null
-        val password = prefs.getString(KEY_PASSWORD,        null) ?: return null
-        val caCert   = prefs.getString(KEY_CUSTOM_CA_CERT,  null)
-        return ServerConfig(url, clientId, username, password, caCert)
+        val url      = prefs.getString(KEY_SERVER_URL,     null) ?: return null
+        val clientId = prefs.getString(KEY_CLIENT_ID,      null) ?: return null
+        val password = prefs.getString(KEY_PASSWORD,       null) ?: return null
+        val caCert   = prefs.getString(KEY_CUSTOM_CA_CERT, null)
+        return ServerConfig(url, clientId, password, caCert)
     }
 
     fun save(
         serverUrl: String,
         clientId: String,
-        username: String,
         password: String,
         customCaCertPem: String? = null,
     ) {
         prefs.edit()
             .putString(KEY_SERVER_URL, serverUrl)
             .putString(KEY_CLIENT_ID,  clientId)
-            .putString(KEY_USERNAME,   username)
             .putString(KEY_PASSWORD,   password)
             .apply {
                 if (customCaCertPem != null) putString(KEY_CUSTOM_CA_CERT, customCaCertPem)
@@ -57,7 +54,6 @@ class SettingsRepository(context: Context) {
         private const val PREFS_FILE         = "kdbx_git_settings"
         private const val KEY_SERVER_URL     = "server_url"
         private const val KEY_CLIENT_ID      = "client_id"
-        private const val KEY_USERNAME       = "username"
         private const val KEY_PASSWORD       = "password"
         private const val KEY_CUSTOM_CA_CERT = "custom_ca_cert"
     }

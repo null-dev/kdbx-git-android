@@ -16,7 +16,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun save(
         serverUrl: String,
         clientId: String,
-        username: String,
         password: String,
         customCaCertPem: String?,
     ) {
@@ -36,7 +35,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         repository.save(
             serverUrl       = trimmedUrl,
             clientId        = trimmedClientId,
-            username        = username.trim(),
             password        = password,
             customCaCertPem = customCaCertPem?.trim()?.takeIf { it.isNotBlank() },
         )
