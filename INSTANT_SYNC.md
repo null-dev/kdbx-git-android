@@ -72,26 +72,57 @@ DELETE /push/{client_id}/endpoint
 
 ### Persistence
 
-Push endpoint URLs are stored in a new table/collection in the server's existing database
-(one row per client ID). The schema is intentionally minimal:
+The server has no database. Push endpoint state is stored in a single **`sync-state.json`**
+file on disk, kept alongside the existing server data files.
 
-```
-push_endpoints {
-    client_id    TEXT       PRIMARY KEY   -- same as WebDAV client_id
-    endpoint     TEXT       NOT NULL      -- UP endpoint URL (HTTPS)
-    last_seen_at TIMESTAMP  NOT NULL      -- updated on every POST (register or refresh)
+```json
+{
+  "push_endpoints": {
+    "alice-phone": {
+      "endpoint": "https://ntfy.example.com/AbCdEfGhIjKlMnOp",
+      "last_seen_at": "2026-03-18T10:23:00Z"
+    },
+    "bob-laptop": {
+      "endpoint": "https://ntfy.example.com/ZyXwVuTsRqPoNmLk",
+      "last_seen_at": "2026-03-15T08:01:00Z"
+    }
+  }
 }
 ```
+
+The top-level object is versioned implicitly by the key set; additional fields can be
+added in the future without breaking existing readers.
+
+#### Atomic file replacement
+
+To avoid leaving a corrupt or truncated `sync-state.json` if the process crashes mid-write,
+all writes follow the write-to-temp-then-rename pattern:
+
+1. Serialise the new state to a temp file in the same directory (e.g. `sync-state.json.tmp`).
+2. `fsync` the temp file.
+3. Atomically rename the temp file over `sync-state.json` (POSIX `rename(2)` is atomic
+   within the same filesystem).
+
+Because rename is atomic on POSIX systems, readers will always see either the old complete
+file or the new complete file — never a partial write.
+
+#### Pruning on write
+
+Expired entries are pruned **before every write** to `sync-state.json`, not in a separate
+background job. Concretely, any entry whose `last_seen_at` is older than 14 days is
+dropped from the in-memory map before serialisation. This keeps the file tidy without
+requiring a scheduler or cron job, and ensures expired entries are removed the next time
+any write occurs (registration, unregistration, or a delivery that triggers a 404/410
+cleanup).
 
 ### Delivery logic
 
 After every commit to `main` (i.e. after any `PUT /dav/{id}/database.kdbx` that results
 in a new git commit), the server:
 
-1. Loads all rows from `push_endpoints` where `last_seen_at > now() - 14 days`.
-   Endpoints outside that window are skipped for delivery but not yet deleted (see Expiry
-   below).
-2. For each endpoint URL, sends:
+1. Reads `sync-state.json` into memory. Because expired entries are pruned on every write,
+   all entries present in the file are within the 14-day TTL.
+2. For each endpoint URL in the loaded state, sends:
 
 ```
 POST {endpoint_url}
@@ -104,15 +135,16 @@ Content-Type: application/json
    best-effort. Clients that miss a push will catch up via periodic sync.
 4. Delivery is fire-and-forget; it must not block the HTTP response to the uploading
    client or delay the git commit. Run deliveries in a background goroutine/task.
-5. Endpoints that return 404 or 410 from the push provider are deleted from
-   `push_endpoints` immediately — these indicate the endpoint has been permanently revoked.
+5. Endpoints that return 404 or 410 from the push provider have been permanently revoked.
+   Remove them from the in-memory state, prune expired entries, then atomically save
+   `sync-state.json`.
 
 ### Endpoint expiry
 
-The server runs a periodic cleanup (e.g. daily) that hard-deletes rows from
-`push_endpoints` where `last_seen_at < now() - 14 days`. This keeps the table tidy and
-ensures that endpoints belonging to uninstalled apps or decommissioned devices are
-eventually purged.
+There is no background cleanup job. Expired entries (those with `last_seen_at` older than
+14 days) are pruned from the in-memory state **before every write** to `sync-state.json`.
+This means entries are cleaned up the next time any mutation occurs — registration,
+unregistration, or a 404/410 removal after delivery.
 
 The 14-day TTL pairs with the client's 3-day refresh schedule (see Android client design
 below): a healthy client refreshes roughly every 3 days, so 14 days gives more than four
@@ -297,7 +329,7 @@ SyncRepository.sync()
        │
        │  (server, after commit)
        ▼
-server iterates push_endpoints
+server reads sync-state.json, iterates endpoints
   └─ POST https://ntfy.example.com/...   { "event": "branch-updated" }
        │
        ▼

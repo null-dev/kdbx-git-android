@@ -379,13 +379,14 @@ collected in the ViewModel, so new entries appear automatically.
 See `INSTANT_SYNC.md` for the full design.
 
 **Server changes (kdbx-git server repo):**
-- [ ] Add `push_endpoints` table to server database (`client_id`, `endpoint`, `last_seen_at`)
-- [ ] Implement `POST /push/{client_id}/endpoint` — register / replace endpoint, update `last_seen_at`
-- [ ] Implement `DELETE /push/{client_id}/endpoint` — unregister endpoint (idempotent)
-- [ ] After every successful `main` commit: deliver `{"event":"branch-updated"}` to all
-      endpoints where `last_seen_at > now() - 14 days`, in a background task (fire-and-forget, 5 s timeout)
-- [ ] Auto-delete endpoints that return 404/410 from the push provider
-- [ ] Periodic cleanup job: hard-delete rows where `last_seen_at < now() - 14 days`
+- [ ] Introduce `sync-state.json` for push endpoint persistence (`client_id` → `{endpoint, last_seen_at}`)
+- [ ] All writes to `sync-state.json`: prune entries older than 14 days, then write via
+      temp file + `fsync` + atomic rename
+- [ ] Implement `POST /push/{client_id}/endpoint` — register / replace endpoint, update `last_seen_at`, save
+- [ ] Implement `DELETE /push/{client_id}/endpoint` — remove entry, save (idempotent)
+- [ ] After every successful `main` commit: read `sync-state.json`, deliver
+      `{"event":"branch-updated"}` to all entries in a background task (fire-and-forget, 5 s timeout)
+- [ ] On 404/410 response from push provider: remove that entry, prune, atomically save `sync-state.json`
 
 **Android client changes:**
 - [ ] Add `com.github.UnifiedPush:android-connector` dependency
