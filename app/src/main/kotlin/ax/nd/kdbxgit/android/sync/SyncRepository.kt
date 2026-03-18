@@ -15,6 +15,7 @@ class SyncRepository(
     private val settingsRepository: SettingsRepository,
     private val syncLogDao: SyncLogDao,
 ) {
+    private val notifier = SyncNotifier(context)
     /** The live KDBX file served to KeePass clients via KdbxDocumentsProvider. */
     val dbFile = File(context.filesDir, DB_FILENAME)
 
@@ -30,6 +31,11 @@ class SyncRepository(
     /** True if the local file has been written since the last successful push. */
     val localDirty: Boolean
         get() = prefs.getBoolean(KEY_LOCAL_DIRTY, false)
+
+    /** Number of consecutive sync failures since the last success. */
+    private var consecutiveFailures: Int
+        get() = prefs.getInt(KEY_CONSECUTIVE_FAILURES, 0)
+        set(v) = prefs.edit().putInt(KEY_CONSECUTIVE_FAILURES, v).apply()
 
     // Ensures at most one sync runs at a time. A second caller will suspend until
     // the first finishes, then run with the freshest dirty/hash state.
@@ -109,8 +115,11 @@ class SyncRepository(
 
                     val outcome = if (isMerged) SyncOutcome.MERGED else SyncOutcome.SUCCESS
                     log(trigger, SyncType.PUSH_PULL, outcome, bytesDown, bytesUp, startMs)
+                    if (isMerged) notifier.onMerge()
                 }
 
+                consecutiveFailures = 0
+                notifier.onSuccess()
                 _syncStatus.value = SyncStatus.Idle
 
             } catch (e: Exception) {
@@ -118,7 +127,8 @@ class SyncRepository(
                 _syncStatus.value = SyncStatus.Error(msg)
                 val type = if (bytesUp > 0) SyncType.PUSH_PULL else SyncType.PULL
                 log(trigger, type, SyncOutcome.FAILURE, bytesDown, bytesUp, startMs, msg)
-                // TODO Phase 8: exponential back-off; user notification after 3 failures
+                consecutiveFailures++
+                notifier.onFailure(consecutiveFailures, msg)
             }
         }
     }
@@ -164,9 +174,10 @@ class SyncRepository(
         const val DOCUMENTS_AUTHORITY = "ax.nd.kdbxgit.android.documents"
         const val DB_DOC_ID           = "database.kdbx"
 
-        private const val DB_FILENAME     = "database.kdbx"
-        private const val PREFS_NAME      = "kdbx_git_sync_state"
-        private const val KEY_LOCAL_DIRTY = "local_dirty"
-        private const val KEY_LAST_HASH   = "last_synced_hash"
+        private const val DB_FILENAME            = "database.kdbx"
+        private const val PREFS_NAME             = "kdbx_git_sync_state"
+        private const val KEY_LOCAL_DIRTY        = "local_dirty"
+        private const val KEY_LAST_HASH          = "last_synced_hash"
+        private const val KEY_CONSECUTIVE_FAILURES = "consecutive_failures"
     }
 }

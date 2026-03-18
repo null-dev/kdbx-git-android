@@ -354,10 +354,10 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] `LazyColumn` (Compose) displaying the rolling sync log
 - [x] `SyncRepository` writes a `SyncLogEntry` at the end of every sync attempt
 
-### Phase 8 — Error handling
+### Phase 8 — Error handling ✓
 
-- [ ] User-visible error after 3 consecutive failures (notification + in-app banner)
-- [ ] Conflict-resolved notification ("Database merged with remote changes")
+- [x] User-visible error after 3 consecutive failures (notification + in-app banner)
+- [x] Conflict-resolved notification ("Database merged with remote changes")
 
 ### Phase 9 — Security & hardening
 
