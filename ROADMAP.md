@@ -337,14 +337,14 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] `SyncService` skeleton and manifest declarations
 - [x] ~~Persistent foreground service with `ConnectivityManager.NetworkCallback`~~ — removed; see Phase 6
 
-### Phase 6 — WorkManager sync (primary sync driver)
+### Phase 6 — WorkManager sync (primary sync driver) ✓
 
-- [ ] `SyncWorker` (`CoroutineWorker`) calling `SyncRepository.sync(trigger)`
-- [ ] `setForeground(ForegroundInfo)` — show "Syncing…" notification only during active work
-- [ ] `PeriodicWorkRequest` (default 15 min, `NetworkType.CONNECTED`) — covers periodic and connectivity-restore triggers
-- [ ] Expedited `OneTimeWorkRequest` for `WRITE` and `MANUAL` triggers
-- [ ] Remove `SyncService`; update `KdbxDocumentsProvider`, `BootReceiver`, `MainActivity`, and `SettingsViewModel` to enqueue WorkManager instead
-- [ ] Cancel/reschedule `PeriodicWorkRequest` when settings change
+- [x] `SyncWorker` (`CoroutineWorker`) calling `SyncRepository.sync(trigger)`
+- [x] `setForeground(ForegroundInfo)` — show "Syncing…" notification only during active work
+- [x] `PeriodicWorkRequest` (default 15 min, `NetworkType.CONNECTED`) — covers periodic and connectivity-restore triggers
+- [x] Expedited `OneTimeWorkRequest` for `WRITE` and `MANUAL` triggers
+- [x] Remove `SyncService`; update `KdbxDocumentsProvider`, `BootReceiver`, `MainActivity`, and `SettingsViewModel` to enqueue WorkManager instead
+- [x] Cancel/reschedule `PeriodicWorkRequest` when settings change
 
 ### Phase 7 — Main UI, manual sync & sync log
 

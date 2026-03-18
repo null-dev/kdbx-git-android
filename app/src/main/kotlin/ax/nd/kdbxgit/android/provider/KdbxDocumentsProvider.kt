@@ -13,8 +13,8 @@ import android.provider.DocumentsProvider
 import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.R
 import ax.nd.kdbxgit.android.sync.SyncRepository
-import ax.nd.kdbxgit.android.sync.SyncService
 import ax.nd.kdbxgit.android.sync.SyncTrigger
+import ax.nd.kdbxgit.android.sync.SyncWorker
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -170,9 +170,9 @@ class KdbxDocumentsProvider : DocumentsProvider() {
         // Notify any open cursors (e.g. the system picker) that metadata changed.
         context!!.contentResolver.notifyChange(docUri(), null)
 
-        // Route through SyncService so the sync runs inside the service's managed
-        // coroutine scope rather than a fire-and-forget scope.
-        SyncService.syncNow(context!!, SyncTrigger.WRITE)
+        // Enqueue an expedited WorkManager job so the sync runs even if the app
+        // process dies immediately after this call.
+        SyncWorker.enqueueSyncNow(context!!, SyncTrigger.WRITE)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

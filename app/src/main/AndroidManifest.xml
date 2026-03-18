@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -45,16 +46,14 @@
         </provider>
 
         <!--
-            foregroundServiceType="dataSync" is required when targeting API 34+
-            for a service that performs network data synchronisation.
-            stopWithTask="false" keeps the service alive when the user swipes
-            the app away from recents — sync should continue in the background.
+            WorkManager runs SyncWorker inside its own SystemForegroundService.
+            Merge the declaration here to add foregroundServiceType="dataSync"
+            (required on API 34+ for any foreground service doing network I/O).
         -->
         <service
-            android:name=".sync.SyncService"
-            android:exported="false"
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
+            tools:node="merge" />
 
         <receiver
             android:name=".BootReceiver"
