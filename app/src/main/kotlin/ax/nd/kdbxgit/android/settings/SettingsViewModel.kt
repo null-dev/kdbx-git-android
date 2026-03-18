@@ -4,10 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.push.PushRegistrationWorker
+import ax.nd.kdbxgit.android.push.registerUpDistributor
 import ax.nd.kdbxgit.android.sync.SyncWorker
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.StateFlow
-import org.unifiedpush.android.connector.UnifiedPush
 
 private val logger = KotlinLogging.logger {}
 
@@ -52,18 +52,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         repository.savePollInterval(pollIntervalMinutes)
         SyncWorker.schedulePeriodicSync(getApplication(), pollIntervalMinutes)
 
-        // (Re-)register with the UP distributor. tryUseCurrentOrDefaultDistributor
-        // auto-selects the embedded FCM distributor when no external one is installed.
+        // (Re-)register with the UP distributor. Falls back to getDistributors() broadcast scan
+        // when the deeplink mechanism fails (e.g. embedded FCM distributor has no deeplink Activity).
         logger.info { "Detecting UP distributor after settings save" }
-        UnifiedPush.tryUseCurrentOrDefaultDistributor(getApplication()) { success ->
-            if (success) {
-                val distributor = UnifiedPush.getSavedDistributor(getApplication())
-                logger.info { "UP distributor selected: $distributor — registering" }
-                UnifiedPush.register(getApplication())
-            } else {
-                logger.warn { "No UP distributor available" }
-            }
-        }
+        registerUpDistributor(getApplication())
         PushRegistrationWorker.schedulePeriodicRefresh(getApplication())
     }
 }

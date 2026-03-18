@@ -49,6 +49,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import ax.nd.kdbxgit.android.push.PushRegistrationWorker
+import ax.nd.kdbxgit.android.push.registerUpDistributor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import ax.nd.kdbxgit.android.settings.SettingsScreen
 import ax.nd.kdbxgit.android.sync.SyncLogEntry
@@ -81,15 +82,7 @@ class MainActivity : ComponentActivity() {
         if (app.settingsRepository.serverConfig.value != null) {
             SyncWorker.schedulePeriodicSync(this, app.settingsRepository.pollIntervalMinutes.value)
             logger.info { "Detecting UP distributor on start" }
-            UnifiedPush.tryUseCurrentOrDefaultDistributor(this) { success ->
-                if (success) {
-                    val distributor = UnifiedPush.getSavedDistributor(this)
-                    logger.info { "UP distributor selected: $distributor — registering" }
-                    UnifiedPush.register(this)
-                } else {
-                    logger.warn { "No UP distributor available" }
-                }
-            }
+            registerUpDistributor(this)
             PushRegistrationWorker.schedulePeriodicRefresh(this)
         }
     }
