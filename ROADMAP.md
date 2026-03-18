@@ -325,7 +325,7 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] `ReadWriteLock` guarding file access
 - [x] `notifyChange` after successful pulls
 
-### Phase 5 — Sync service (revised, see Phase 6)
+### Phase 5 — Sync service (revised, see Phase 6) ✓
 
 > **Design change:** The original plan called for a persistent foreground service with a
 > permanent notification and a live `ConnectivityManager.NetworkCallback`. This was dropped
@@ -335,7 +335,7 @@ collected in the ViewModel, so new entries appear automatically.
 > notification only during active sync.
 
 - [x] `SyncService` skeleton and manifest declarations
-- [ ] ~~Persistent foreground service with `ConnectivityManager.NetworkCallback`~~ — removed; see Phase 6
+- [x] ~~Persistent foreground service with `ConnectivityManager.NetworkCallback`~~ — removed; see Phase 6
 
 ### Phase 6 — WorkManager sync (primary sync driver)
 
