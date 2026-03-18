@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -58,7 +59,14 @@ class SyncWorker(
 
     private fun buildForegroundInfo(): ForegroundInfo {
         createNotificationChannel()
-        return ForegroundInfo(NOTIFICATION_ID, buildNotification())
+        // Must pass the service type explicitly on API 29+; without it WorkManager calls
+        // startForeground(id, notification, 0) which Android 14+ (targetSdk 34+) rejects
+        // with InvalidForegroundServiceTypeException ("type none prohibited").
+        return ForegroundInfo(
+            NOTIFICATION_ID,
+            buildNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+        )
     }
 
     private fun buildNotification(): Notification {
