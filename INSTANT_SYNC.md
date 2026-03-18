@@ -70,6 +70,25 @@ DELETE /push/{client_id}/endpoint
 - Removes any stored endpoint URL for `{client_id}`.
 - Returns `204 No Content` (also `204` if no endpoint was registered — idempotent).
 
+#### Get VAPID public key
+
+```
+GET /push/{client_id}/vapid-public-key
+```
+
+Response:
+
+```json
+{ "public_key": "<Base64url-encoded uncompressed P-256 public key>" }
+```
+
+- Returns the server's VAPID public key.
+- Required by the embedded FCM distributor: it uses the VAPID key to authenticate push
+  messages with Google's FCM infrastructure.
+- The client fetches this key before calling `UnifiedPush.register(vapid = key)`.
+- External UP distributors (ntfy, Gotify-UP, etc.) do not require a VAPID key; the
+  client passes `null` for those.
+
 ### Persistence
 
 The server has no database. Push endpoint state is stored in a single **`sync-state.json`**
@@ -168,33 +187,37 @@ provider without leaking sensitive information.
 
 ### Library
 
-Add the official UnifiedPush Android library:
-
 ```kotlin
 // build.gradle.kts
-implementation("com.github.UnifiedPush:android-connector:2.4.0")
+implementation("org.unifiedpush.android:connector:3.x.x")
+implementation("org.unifiedpush.android:embedded-fcm-distributor:3.x.x")
 ```
 
-The library provides:
-- `UnifiedPush.registerApp()` / `UnifiedPush.unregisterApp()` — registration lifecycle
-- `MessagingReceiver` — abstract `BroadcastReceiver` subclass with callbacks for
-  endpoint changes and incoming messages
-- `UnifiedPush.getDistributor()` / `UnifiedPush.getAckDistributor()` — distributor
-  discovery and selection
+The connector library provides:
+- `UnifiedPush.register()` / `UnifiedPush.unregister()` — registration lifecycle
+- `MessagingReceiver` — abstract `BroadcastReceiver` subclass with typed callbacks
+  (`PushEndpoint`, `PushMessage`, `FailedReason`)
+- `UnifiedPush.tryUseCurrentOrDefaultDistributor()` — deeplink-based distributor selection
+- `UnifiedPush.getDistributors()` / `UnifiedPush.saveDistributor()` — manual distributor
+  selection (used as fallback for the embedded FCM distributor)
+
+The `embedded-fcm-distributor` artifact bundles a fallback distributor that routes push
+messages through Google's FCM infrastructure when no external UP distributor is installed.
+It requires Play Services but not the Firebase SDK or `google-services.json`.
 
 ### New class: `PushReceiver`
 
 ```kotlin
 class PushReceiver : MessagingReceiver() {
 
-    override fun onNewEndpoint(context: Context, endpoint: String, instance: String) {
+    override fun onNewEndpoint(context: Context, endpoint: PushEndpoint, instance: String) {
         // Called when UP assigns (or reassigns) an endpoint URL.
-        // Save locally and register with the kdbx-git server.
-        SettingsRepository(context).savePushEndpoint(endpoint)
-        PushRegistrationWorker.enqueue(context, endpoint)
+        // Save locally and enqueue registration with the kdbx-git server.
+        SettingsRepository(context).savePushEndpoint(endpoint.url)
+        PushRegistrationWorker.enqueue(context)
     }
 
-    override fun onMessage(context: Context, message: ByteArray, instance: String) {
+    override fun onMessage(context: Context, message: PushMessage, instance: String) {
         // Wakeup signal received — trigger an expedited pull-only sync.
         SyncWorker.enqueueSyncNow(context, SyncTrigger.PUSH)
     }
@@ -202,6 +225,10 @@ class PushReceiver : MessagingReceiver() {
     override fun onUnregistered(context: Context, instance: String) {
         // Distributor revoked the registration — inform the server.
         PushRegistrationWorker.enqueueDelete(context)
+        SettingsRepository(context).clearPushEndpoint()
+    }
+
+    override fun onRegistrationFailed(context: Context, reason: FailedReason, instance: String) {
         SettingsRepository(context).clearPushEndpoint()
     }
 }
@@ -226,30 +253,41 @@ Both requests use the same HTTP Basic credentials as the WebDAV client.
 
 ### Registration lifecycle
 
+Distributor selection and `UnifiedPush.register()` use a two-pass approach, because the
+embedded FCM distributor does not register a `unifiedpush://link` deeplink Activity (only
+a broadcast receiver), so `tryUseCurrentOrDefaultDistributor` alone cannot find it:
+
 ```
-App first launch (settings configured)
+App start / settings save
     │
     ▼
-UnifiedPush.registerApp(context)
-    │
-    ├─ distributor installed? ──NO──► show "Install a UnifiedPush distributor" prompt in Settings
-    │
-    └─ YES
-        │
-        ▼
-    PushReceiver.onNewEndpoint(endpoint)
-        │
-        ▼
-    PushRegistrationWorker → POST /push/{id}/endpoint
-        │
-        ▼
-    Registration complete — instant sync active
-
-
-Credentials changed / logout
+1. Fetch VAPID public key  ←── GET /push/{id}/vapid-public-key
     │
     ▼
-UnifiedPush.unregisterApp(context)
+2. tryUseCurrentOrDefaultDistributor()  (deeplink scan)
+    │
+    ├─ success ──► UnifiedPush.register(vapid = key)
+    │
+    └─ failure (no deeplink handler)
+         │
+         ▼
+       getDistributors()  (ACTION_REGISTER broadcast scan)
+         │
+         ├─ found ──► saveDistributor() → UnifiedPush.register(vapid = key)
+         │
+         └─ none  ──► log warning, periodic sync only
+              │
+              ▼
+         PushReceiver.onNewEndpoint(endpoint)
+              │
+              ▼
+         PushRegistrationWorker → POST /push/{id}/endpoint
+
+
+Credentials changed / server URL changed
+    │
+    ▼
+UnifiedPush.unregister(context)
     │
     ▼
 PushReceiver.onUnregistered()
@@ -258,8 +296,8 @@ PushReceiver.onUnregistered()
 PushRegistrationWorker → DELETE /push/{id}/endpoint
 ```
 
-`registerApp` is also called after a successful settings save (URL, client ID, or password
-change), which triggers `onNewEndpoint` again and re-registers with the new credentials.
+The VAPID key is passed to `register()` unconditionally — external distributors silently
+ignore it, and the embedded FCM distributor requires it.
 
 ### Periodic endpoint refresh
 
@@ -306,11 +344,15 @@ No endpoint URL is shown to the user; it is an implementation detail.
 
 ### Fallback behaviour
 
-If no UnifiedPush distributor is installed:
-- `UnifiedPush.registerApp()` finds no distributor and does not call `onNewEndpoint`.
-- The app continues operating with periodic WorkManager sync only (15-minute interval).
-- No error is shown; a soft informational message in Settings explains that instant sync
-  requires a distributor app.
+The `embedded-fcm-distributor` library is bundled in the app as an automatic fallback for
+devices that have no external UP distributor installed. When Play Services are available,
+`getDistributors()` returns the app's own package name and the embedded distributor handles
+delivery via Google's FCM infrastructure. No external distributor app is needed.
+
+If Play Services are also unavailable:
+- `getDistributors()` returns an empty list.
+- The app falls back to periodic WorkManager sync only.
+- A status message in Settings explains that instant sync is unavailable.
 
 ---
 
