@@ -42,6 +42,22 @@ class SyncRepository(
     val syncMutex = Mutex()
 
     /**
+     * Wipes the local KDBX file and resets all sync state.
+     * Called when the user changes the server URL or client ID so stale data from
+     * a different server is not retained.
+     */
+    fun clearLocalData() {
+        dbFile.delete()
+        prefs.edit()
+            .remove(KEY_LAST_HASH)
+            .putBoolean(KEY_LOCAL_DIRTY, false)
+            .putInt(KEY_CONSECUTIVE_FAILURES, 0)
+            .apply()
+        _syncStatus.value = SyncStatus.Idle
+        notifier.onSuccess() // clear any lingering error notification
+    }
+
+    /**
      * Called by [ax.nd.kdbxgit.android.provider.KdbxDocumentsProvider] after a
      * successful write so the next sync knows there is local work to push.
      */

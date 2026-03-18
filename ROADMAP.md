@@ -359,11 +359,11 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] User-visible error after 3 consecutive failures (notification + in-app banner)
 - [x] Conflict-resolved notification ("Database merged with remote changes")
 
-### Phase 9 — Security & hardening
+### Phase 9 — Security & hardening ✓
 
-- [ ] HTTPS support (custom trust anchors for self-signed certs)
-- [ ] Wipe local file on credential change / logout
-- [ ] Review URI permission grants: ensure `FLAG_GRANT_READ_URI_PERMISSION` / `FLAG_GRANT_WRITE_URI_PERMISSION` are scoped correctly
+- [x] HTTPS support (custom trust anchors for self-signed certs)
+- [x] Wipe local file on credential change / logout
+- [x] Review URI permission grants: `android:grantUriPermissions="true"` and `android:permission="android.permission.MANAGE_DOCUMENTS"` on the provider ensure all URI grants are mediated by the system file picker
 
 ### Phase 10 — Testing & polish
 

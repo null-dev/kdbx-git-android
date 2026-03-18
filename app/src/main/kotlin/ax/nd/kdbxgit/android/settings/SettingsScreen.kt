@@ -50,19 +50,21 @@ fun SettingsScreen(
 ) {
     val current by viewModel.serverConfig.collectAsStateWithLifecycle()
 
-    var serverUrl by rememberSaveable { mutableStateOf(current?.serverUrl ?: "") }
-    var clientId  by rememberSaveable { mutableStateOf(current?.clientId  ?: "") }
-    var username  by rememberSaveable { mutableStateOf(current?.username  ?: "") }
-    var password  by rememberSaveable { mutableStateOf(current?.password  ?: "") }
+    var serverUrl       by rememberSaveable { mutableStateOf(current?.serverUrl       ?: "") }
+    var clientId        by rememberSaveable { mutableStateOf(current?.clientId        ?: "") }
+    var username        by rememberSaveable { mutableStateOf(current?.username        ?: "") }
+    var password        by rememberSaveable { mutableStateOf(current?.password        ?: "") }
+    var customCaCert    by rememberSaveable { mutableStateOf(current?.customCaCertPem ?: "") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
 
     // Populate fields when existing config is first loaded (e.g. after process restore).
     LaunchedEffect(current) {
         if (serverUrl.isEmpty() && current != null) {
-            serverUrl = current!!.serverUrl
-            clientId  = current!!.clientId
-            username  = current!!.username
-            password  = current!!.password
+            serverUrl    = current!!.serverUrl
+            clientId     = current!!.clientId
+            username     = current!!.username
+            password     = current!!.password
+            customCaCert = current!!.customCaCertPem ?: ""
         }
     }
 
@@ -138,7 +140,7 @@ fun SettingsScreen(
                                        else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
+                    imeAction = ImeAction.Next,
                 ),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -153,6 +155,18 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Spacer(Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = customCaCert,
+                onValueChange = { customCaCert = it },
+                label = { Text("Custom CA Certificate (optional)") },
+                placeholder = { Text("-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----") },
+                minLines = 3,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             Spacer(Modifier.height(24.dp))
 
             Button(
@@ -163,7 +177,13 @@ fun SettingsScreen(
                         scope.launch { snackbarHostState.showSnackbar("All fields are required") }
                         return@Button
                     }
-                    viewModel.save(serverUrl, clientId, username, password)
+                    viewModel.save(
+                        serverUrl    = serverUrl,
+                        clientId     = clientId,
+                        username     = username,
+                        password     = password,
+                        customCaCertPem = customCaCert.takeIf { it.isNotBlank() },
+                    )
                     scope.launch { snackbarHostState.showSnackbar("Settings saved") }
                 },
                 modifier = Modifier.fillMaxWidth(),
