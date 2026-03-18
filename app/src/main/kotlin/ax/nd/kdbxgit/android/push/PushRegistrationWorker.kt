@@ -43,10 +43,13 @@ class PushRegistrationWorker(
             val client = WebDavClient(config)
             when (action) {
                 ACTION_REGISTER -> {
-                    val endpoint = app.settingsRepository.pushEndpoint.value
+                    val repo     = app.settingsRepository
+                    val endpoint = repo.pushEndpoint.value
                         ?: return Result.success() // no endpoint stored yet
-                    logger.info { "Registering push endpoint with sync server (attempt ${runAttemptCount + 1})" }
-                    client.registerPushEndpoint(endpoint)
+                    val p256dh   = repo.pushP256dh
+                    val auth     = repo.pushAuth
+                    logger.info { "Registering push endpoint with sync server (has keys: ${p256dh != null}, attempt ${runAttemptCount + 1})" }
+                    client.registerPushEndpoint(endpoint, p256dh, auth)
                     logger.info { "Push endpoint registered successfully" }
                     Result.success()
                 }

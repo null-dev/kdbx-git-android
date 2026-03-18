@@ -51,15 +51,23 @@ password), identical to the existing WebDAV endpoints.
 POST /push/{client_id}/endpoint
 Content-Type: application/json
 
-{ "endpoint": "https://ntfy.example.com/AbCdEfGhIjKlMnOp" }
+{
+  "endpoint": "https://push.example/...",
+  "keys": {
+    "p256dh": "<Base64url P-256 public key>",
+    "auth":   "<Base64url auth secret>"
+  }
+}
 ```
 
-- Stores (or replaces) the endpoint URL for `{client_id}`.
+- Stores (or replaces) the Web Push subscription for `{client_id}`.
 - Returns `204 No Content` on success.
-- The endpoint URL is treated as an opaque string; the server makes no assumptions about
-  its format beyond it being a valid HTTPS URL.
-- If a distributor endpoint was previously registered for this client it is silently
-  replaced (supporting distributor changes or re-installs).
+- `keys` is present when the UP library has generated Web Push key pairs for the client
+  (always the case for the embedded FCM distributor; may be absent for some external
+  distributors). When `keys` is present the server **must** encrypt push payloads using
+  RFC 8291 (Web Push Encryption) before delivery.
+- If a subscription was previously registered for this client it is silently replaced
+  (supporting distributor changes or re-installs).
 
 #### Unregister a push endpoint
 
@@ -98,7 +106,8 @@ file on disk, kept alongside the existing server data files.
 {
   "push_endpoints": {
     "alice-phone": {
-      "endpoint": "https://ntfy.example.com/AbCdEfGhIjKlMnOp",
+      "endpoint": "https://push.example/AbCdEfGhIjKlMnOp",
+      "keys": { "p256dh": "...", "auth": "..." },
       "last_seen_at": "2026-03-18T10:23:00Z"
     },
     "bob-laptop": {
@@ -172,14 +181,24 @@ extended period or simply not charging.
 
 ### Notification payload
 
+Plain (unencrypted, for distributors without keys):
 ```json
 { "event": "branch-updated" }
 ```
 
+Encrypted (RFC 8291, for subscriptions that include `keys`):
+```
+Content-Type: application/octet-stream
+Content-Encoding: aes128gcm
+
+<encrypted bytes>
+```
+The plaintext before encryption is `{"event":"branch-updated"}`.
+
 The payload carries **no database content and no credentials**. It is a pure wakeup
 signal. The client discards the payload body and simply triggers a normal sync cycle.
-Keeping the payload minimal also means it is safe to pass through any third-party push
-provider without leaking sensitive information.
+When encryption is used, the payload is protected end-to-end between server and device
+using the client's P-256 ECDH key pair and auth secret.
 
 ---
 

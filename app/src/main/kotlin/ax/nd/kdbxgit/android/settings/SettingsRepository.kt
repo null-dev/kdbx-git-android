@@ -27,6 +27,11 @@ class SettingsRepository(context: Context) {
     private val _pushEndpoint = MutableStateFlow(prefs.getString(KEY_PUSH_ENDPOINT, null))
     val pushEndpoint: StateFlow<String?> = _pushEndpoint.asStateFlow()
 
+    /** Base64url-encoded P-256 public key from the UP library (Web Push `p256dh`). */
+    val pushP256dh: String? get() = prefs.getString(KEY_PUSH_P256DH, null)
+    /** Base64url-encoded auth secret from the UP library (Web Push `auth`). */
+    val pushAuth: String?   get() = prefs.getString(KEY_PUSH_AUTH,   null)
+
     private val _pollIntervalMinutes = MutableStateFlow(
         prefs.getLong(KEY_POLL_INTERVAL_MINUTES, DEFAULT_POLL_INTERVAL_MINUTES)
     )
@@ -63,13 +68,23 @@ class SettingsRepository(context: Context) {
         _pollIntervalMinutes.value = minutes
     }
 
-    fun savePushEndpoint(endpoint: String) {
-        prefs.edit().putString(KEY_PUSH_ENDPOINT, endpoint).apply()
+    fun savePushEndpoint(endpoint: String, p256dh: String?, auth: String?) {
+        prefs.edit()
+            .putString(KEY_PUSH_ENDPOINT, endpoint)
+            .apply {
+                if (p256dh != null) putString(KEY_PUSH_P256DH, p256dh) else remove(KEY_PUSH_P256DH)
+                if (auth   != null) putString(KEY_PUSH_AUTH,   auth)   else remove(KEY_PUSH_AUTH)
+            }
+            .apply()
         _pushEndpoint.value = endpoint
     }
 
     fun clearPushEndpoint() {
-        prefs.edit().remove(KEY_PUSH_ENDPOINT).apply()
+        prefs.edit()
+            .remove(KEY_PUSH_ENDPOINT)
+            .remove(KEY_PUSH_P256DH)
+            .remove(KEY_PUSH_AUTH)
+            .apply()
         _pushEndpoint.value = null
     }
 
@@ -80,6 +95,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_PASSWORD       = "password"
         private const val KEY_CUSTOM_CA_CERT = "custom_ca_cert"
         private const val KEY_PUSH_ENDPOINT          = "push_endpoint"
+        private const val KEY_PUSH_P256DH            = "push_p256dh"
+        private const val KEY_PUSH_AUTH              = "push_auth"
         private const val KEY_POLL_INTERVAL_MINUTES  = "poll_interval_minutes"
         const val DEFAULT_POLL_INTERVAL_MINUTES      = 15L
     }

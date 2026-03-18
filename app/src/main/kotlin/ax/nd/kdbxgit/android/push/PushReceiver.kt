@@ -23,14 +23,19 @@ import ax.nd.kdbxgit.android.sync.SyncWorker
 class PushReceiver : MessagingReceiver() {
 
     override fun onNewEndpoint(context: Context, endpoint: PushEndpoint, instance: String) {
-        logger.info { "New UP endpoint received — enqueueing server registration" }
+        val keys = endpoint.pubKeySet
+        logger.info { "New UP endpoint received (has keys: ${keys != null}) — enqueueing server registration" }
         val repo = (context.applicationContext as KdbxGitApplication).settingsRepository
-        repo.savePushEndpoint(endpoint.url)
+        repo.savePushEndpoint(endpoint.url, p256dh = keys?.pubKey, auth = keys?.auth)
         PushRegistrationWorker.enqueue(context)
     }
 
     override fun onMessage(context: Context, message: PushMessage, instance: String) {
-        logger.debug { "Push message received — triggering sync" }
+        if (message.decrypted) {
+            logger.debug { "Encrypted push message received and decrypted — triggering sync" }
+        } else {
+            logger.debug { "Push message received (unencrypted) — triggering sync" }
+        }
         SyncWorker.enqueueSyncNow(context, SyncTrigger.PUSH)
     }
 
