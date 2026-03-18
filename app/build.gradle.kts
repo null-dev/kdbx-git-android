@@ -74,6 +74,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.unifiedpush)
     implementation(libs.unifiedpush.embedded.fcm)
+    implementation(libs.kotlin.logging)
+    implementation(libs.slf4j.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)

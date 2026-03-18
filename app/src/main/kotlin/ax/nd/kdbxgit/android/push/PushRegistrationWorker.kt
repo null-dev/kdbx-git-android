@@ -1,8 +1,8 @@
 package ax.nd.kdbxgit.android.push
 
 import android.content.Context
-import android.util.Log
 import androidx.work.Constraints
+import io.github.oshai.kotlinlogging.KotlinLogging
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -45,22 +45,22 @@ class PushRegistrationWorker(
                 ACTION_REGISTER -> {
                     val endpoint = app.settingsRepository.pushEndpoint.value
                         ?: return Result.success() // no endpoint stored yet
-                    Log.i(TAG, "Registering push endpoint with sync server (attempt ${runAttemptCount + 1})")
+                    logger.info { "Registering push endpoint with sync server (attempt ${runAttemptCount + 1})" }
                     client.registerPushEndpoint(endpoint)
-                    Log.i(TAG, "Push endpoint registered successfully")
+                    logger.info { "Push endpoint registered successfully" }
                     Result.success()
                 }
                 ACTION_DELETE -> {
-                    Log.i(TAG, "Deleting push endpoint from sync server (attempt ${runAttemptCount + 1})")
+                    logger.info { "Deleting push endpoint from sync server (attempt ${runAttemptCount + 1})" }
                     client.deletePushEndpoint()
-                    Log.i(TAG, "Push endpoint deleted successfully")
+                    logger.info { "Push endpoint deleted successfully" }
                     Result.success()
                 }
                 else -> Result.failure()
             }
         } catch (e: Exception) {
             val willRetry = runAttemptCount < MAX_RETRIES
-            Log.w(TAG, "Push registration action '$action' failed (attempt ${runAttemptCount + 1}): ${e.message}; ${if (willRetry) "will retry" else "giving up"}")
+            logger.warn(e) { "Push registration action '$action' failed (attempt ${runAttemptCount + 1}); ${if (willRetry) "will retry" else "giving up"}" }
             if (willRetry) Result.retry() else Result.failure()
         }
     }
@@ -73,7 +73,7 @@ class PushRegistrationWorker(
         private const val WORK_NAME_DELETE      = "push_endpoint_delete"
         private const val WORK_NAME_PERIODIC    = "push_endpoint_refresh"
         private const val MAX_RETRIES           = 3
-        private const val TAG                   = "PushRegistrationWorker"
+        private val logger                      = KotlinLogging.logger {}
 
         private val networkConstraint = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
