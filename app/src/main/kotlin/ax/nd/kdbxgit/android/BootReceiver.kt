@@ -14,7 +14,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val app = context.applicationContext as KdbxGitApplication
         if (app.settingsRepository.serverConfig.value != null) {
-            SyncWorker.schedulePeriodicSync(context)
+            SyncWorker.schedulePeriodicSync(context, app.settingsRepository.pollIntervalMinutes.value)
         }
     }
 }

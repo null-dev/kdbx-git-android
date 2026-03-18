@@ -127,14 +127,16 @@ class SyncWorker(
         }
 
         /**
-         * Schedule (or reschedule) the periodic background sync with a 15-minute interval.
+         * Schedule (or reschedule) the periodic background sync.
          * The [NetworkType.CONNECTED] constraint handles both periodic polling and the
          * offline → online reconnection trigger (WorkManager retries when network returns).
+         * Note: WorkManager enforces a minimum interval of 15 minutes regardless of
+         * the value passed.
          *
          * Safe to call multiple times — uses [ExistingPeriodicWorkPolicy.UPDATE].
          */
-        fun schedulePeriodicSync(context: Context) {
-            val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+        fun schedulePeriodicSync(context: Context, intervalMinutes: Long) {
+            val request = PeriodicWorkRequestBuilder<SyncWorker>(intervalMinutes, TimeUnit.MINUTES)
                 .setConstraints(networkConstraints)
                 .setInputData(workDataOf(KEY_TRIGGER to SyncTrigger.PERIODIC.name))
                 .build()

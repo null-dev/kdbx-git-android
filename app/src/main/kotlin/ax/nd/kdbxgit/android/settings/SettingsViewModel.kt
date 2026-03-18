@@ -15,12 +15,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val serverConfig: StateFlow<ServerConfig?> = repository.serverConfig
     val pushEndpoint: StateFlow<String?> = repository.pushEndpoint
+    val pollIntervalMinutes: StateFlow<Long> = repository.pollIntervalMinutes
 
     fun save(
         serverUrl: String,
         clientId: String,
         password: String,
         customCaCertPem: String?,
+        pollIntervalMinutes: Long,
     ) {
         val trimmedUrl      = serverUrl.trim()
         val trimmedClientId = clientId.trim()
@@ -44,7 +46,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             password        = password,
             customCaCertPem = customCaCertPem?.trim()?.takeIf { it.isNotBlank() },
         )
-        SyncWorker.schedulePeriodicSync(getApplication())
+        repository.savePollInterval(pollIntervalMinutes)
+        SyncWorker.schedulePeriodicSync(getApplication(), pollIntervalMinutes)
 
         // (Re-)register with the UP distributor. If a distributor is installed this
         // triggers onNewEndpoint → PushRegistrationWorker, registering the endpoint

@@ -15,11 +15,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -55,12 +59,15 @@ fun SettingsScreen(
     val context = LocalContext.current
     val current by viewModel.serverConfig.collectAsStateWithLifecycle()
     val pushEndpoint by viewModel.pushEndpoint.collectAsStateWithLifecycle()
+    val savedInterval by viewModel.pollIntervalMinutes.collectAsStateWithLifecycle()
 
     var serverUrl       by rememberSaveable { mutableStateOf(current?.serverUrl       ?: "") }
     var clientId        by rememberSaveable { mutableStateOf(current?.clientId        ?: "") }
     var password        by rememberSaveable { mutableStateOf(current?.password        ?: "") }
     var customCaCert    by rememberSaveable { mutableStateOf(current?.customCaCertPem ?: "") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var pollIntervalMinutes by rememberSaveable { mutableStateOf(savedInterval) }
+    var intervalDropdownExpanded by rememberSaveable { mutableStateOf(false) }
 
     // Populate fields when existing config is first loaded (e.g. after process restore).
     LaunchedEffect(current) {
@@ -70,6 +77,9 @@ fun SettingsScreen(
             password     = current!!.password
             customCaCert = current!!.customCaCertPem ?: ""
         }
+    }
+    LaunchedEffect(savedInterval) {
+        pollIntervalMinutes = savedInterval
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -160,6 +170,38 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Spacer(Modifier.height(12.dp))
+
+            ExposedDropdownMenuBox(
+                expanded = intervalDropdownExpanded,
+                onExpandedChange = { intervalDropdownExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value = pollIntervalLabel(pollIntervalMinutes),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Poll interval") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(intervalDropdownExpanded) },
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(
+                    expanded = intervalDropdownExpanded,
+                    onDismissRequest = { intervalDropdownExpanded = false },
+                ) {
+                    POLL_INTERVAL_OPTIONS.forEach { minutes ->
+                        DropdownMenuItem(
+                            text = { Text(pollIntervalLabel(minutes)) },
+                            onClick = {
+                                pollIntervalMinutes = minutes
+                                intervalDropdownExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
 
             Button(
@@ -169,10 +211,11 @@ fun SettingsScreen(
                         return@Button
                     }
                     viewModel.save(
-                        serverUrl       = serverUrl,
-                        clientId        = clientId,
-                        password        = password,
-                        customCaCertPem = customCaCert.takeIf { it.isNotBlank() },
+                        serverUrl           = serverUrl,
+                        clientId            = clientId,
+                        password            = password,
+                        customCaCertPem     = customCaCert.takeIf { it.isNotBlank() },
+                        pollIntervalMinutes = pollIntervalMinutes,
                     )
                     scope.launch { snackbarHostState.showSnackbar("Settings saved") }
                 },
@@ -208,4 +251,19 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+private val POLL_INTERVAL_OPTIONS = listOf(5L, 15L, 30L, 60L, 120L, 180L, 360L, 720L, 1440L)
+
+private fun pollIntervalLabel(minutes: Long): String = when (minutes) {
+    5L    -> "5 minutes"
+    15L   -> "15 minutes"
+    30L   -> "30 minutes"
+    60L   -> "1 hour"
+    120L  -> "2 hours"
+    180L  -> "3 hours"
+    360L  -> "6 hours"
+    720L  -> "12 hours"
+    1440L -> "1 day"
+    else  -> "$minutes minutes"
 }

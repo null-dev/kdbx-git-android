@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         val app = application as KdbxGitApplication
         if (app.settingsRepository.serverConfig.value != null) {
-            SyncWorker.schedulePeriodicSync(this)
+            SyncWorker.schedulePeriodicSync(this, app.settingsRepository.pollIntervalMinutes.value)
             UnifiedPush.registerApp(this)
             PushRegistrationWorker.schedulePeriodicRefresh(this)
         }

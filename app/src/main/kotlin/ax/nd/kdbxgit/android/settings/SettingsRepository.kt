@@ -27,6 +27,11 @@ class SettingsRepository(context: Context) {
     private val _pushEndpoint = MutableStateFlow(prefs.getString(KEY_PUSH_ENDPOINT, null))
     val pushEndpoint: StateFlow<String?> = _pushEndpoint.asStateFlow()
 
+    private val _pollIntervalMinutes = MutableStateFlow(
+        prefs.getLong(KEY_POLL_INTERVAL_MINUTES, DEFAULT_POLL_INTERVAL_MINUTES)
+    )
+    val pollIntervalMinutes: StateFlow<Long> = _pollIntervalMinutes.asStateFlow()
+
     private fun loadConfig(): ServerConfig? {
         val url      = prefs.getString(KEY_SERVER_URL,     null) ?: return null
         val clientId = prefs.getString(KEY_CLIENT_ID,      null) ?: return null
@@ -53,6 +58,11 @@ class SettingsRepository(context: Context) {
         _serverConfig.value = loadConfig()
     }
 
+    fun savePollInterval(minutes: Long) {
+        prefs.edit().putLong(KEY_POLL_INTERVAL_MINUTES, minutes).apply()
+        _pollIntervalMinutes.value = minutes
+    }
+
     fun savePushEndpoint(endpoint: String) {
         prefs.edit().putString(KEY_PUSH_ENDPOINT, endpoint).apply()
         _pushEndpoint.value = endpoint
@@ -69,6 +79,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_CLIENT_ID      = "client_id"
         private const val KEY_PASSWORD       = "password"
         private const val KEY_CUSTOM_CA_CERT = "custom_ca_cert"
-        private const val KEY_PUSH_ENDPOINT  = "push_endpoint"
+        private const val KEY_PUSH_ENDPOINT          = "push_endpoint"
+        private const val KEY_POLL_INTERVAL_MINUTES  = "poll_interval_minutes"
+        const val DEFAULT_POLL_INTERVAL_MINUTES      = 15L
     }
 }
