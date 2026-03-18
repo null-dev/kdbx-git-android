@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Base shell for the activity window. All visual theming is done in Compose. -->
     <style name="Theme.KdbxGitAndroid" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

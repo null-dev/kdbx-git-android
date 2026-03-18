@@ -289,13 +289,13 @@ collected in the ViewModel, so new entries appear automatically.
 
 ## Implementation Roadmap
 
-### Phase 1 — Project skeleton & settings UI
+### Phase 1 — Project skeleton & settings UI ✓
 
-- [ ] Create Android project (Kotlin, min SDK 26, target SDK 35)
-- [ ] Add dependencies: OkHttp, Kotlin Coroutines, WorkManager, AndroidX Security, Room
-- [ ] `SettingsActivity` / `SettingsFragment` to configure server URL, client ID, credentials
-- [ ] `SettingsRepository` backed by `EncryptedSharedPreferences`
-- [ ] Basic app icon and manifest
+- [x] Create Android project (Kotlin, min SDK 26, target SDK 35)
+- [x] Add dependencies: OkHttp, Kotlin Coroutines, WorkManager, AndroidX Security, Room
+- [x] `SettingsScreen` (Compose) to configure server URL, client ID, credentials
+- [x] `SettingsRepository` backed by `EncryptedSharedPreferences`
+- [x] Basic app icon and manifest
 
 ### Phase 2 — WebDAV client
 
