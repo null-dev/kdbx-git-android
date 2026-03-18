@@ -177,6 +177,56 @@ reload the file.
 
 ---
 
+## Sync Log Design
+
+### Data model
+
+Each sync attempt — successful or not — appends one `SyncLogEntry` to a Room database.
+
+```
+SyncLogEntry {
+    id          : Long (auto-generated primary key)
+    timestamp   : Long (epoch ms, indexed for ordering)
+    type        : Enum { PULL, PUSH, PUSH_PULL }   // what was attempted
+    outcome     : Enum { SUCCESS, MERGED, NO_CHANGE, FAILURE }
+    bytesDown   : Long   // bytes received in GET (0 if no pull)
+    bytesUp     : Long   // bytes sent in PUT (0 if no push)
+    durationMs  : Long   // wall time for the entire sync attempt
+    errorMessage: String? // null on success; short message on failure
+}
+```
+
+`MERGED` means the server returned a database that differed from both the uploaded local
+version and the previous `last_synced_hash` — i.e. the server performed a KeePass merge.
+`NO_CHANGE` means neither side had changed (hash matched, `local_dirty` was false).
+
+### Retention
+
+The log is capped at **200 entries**. When a new entry would exceed this limit, the oldest
+entry is deleted in the same Room transaction.
+
+### UI
+
+The main activity shows the log as a `RecyclerView` below the sync status header:
+
+```
+┌──────────────────────────────────────┐
+│  kdbx-git sync          [Sync now ▶] │
+│  Status: Idle  •  Last sync: 2 m ago │
+├──────────────────────────────────────┤
+│  17 Mar 14:32  PUSH_PULL  ✓ Merged   │
+│  17 Mar 11:15  PULL       ✓ OK       │
+│  17 Mar 09:01  PUSH       ✗ Network  │
+│  …                                   │
+└──────────────────────────────────────┘
+```
+
+Each row shows: timestamp, type, outcome badge, and — on failure — the error message
+truncated to one line. The list is driven by a `Flow<List<SyncLogEntry>>` from Room,
+collected in the ViewModel, so new entries appear automatically.
+
+---
+
 ## Architecture
 
 ```
@@ -213,10 +263,12 @@ reload the file.
 | Class | Responsibility |
 |---|---|
 | `KdbxDocumentsProvider` | SAF DocumentsProvider; file access, observer notifications, picker integration |
-| `SyncRepository` | Owns `last_synced_hash`, `local_dirty`, sync logic |
+| `SyncRepository` | Owns `last_synced_hash`, `local_dirty`, sync logic; writes `SyncLogEntry` on each attempt |
 | `SyncService` | Foreground service; owns connectivity callback and coroutine scope |
 | `WebDavClient` | OkHttp-based GET/PUT with Basic Auth |
 | `SyncWorker` | WorkManager `CoroutineWorker` for periodic background sync |
+| `SyncLogEntry` / `SyncLogDao` | Room entity + DAO; capped at 200 entries |
+| `MainViewModel` | Exposes `Flow<List<SyncLogEntry>>` and `syncStatus` to `MainActivity`; delegates manual sync to `SyncRepository` |
 | `SettingsRepository` | Stores server URL, client ID, username, password (EncryptedSharedPreferences) |
 
 ---
@@ -226,7 +278,7 @@ reload the file.
 ### Phase 1 — Project skeleton & settings UI
 
 - [ ] Create Android project (Kotlin, min SDK 26, target SDK 35)
-- [ ] Add dependencies: OkHttp, Kotlin Coroutines, WorkManager, AndroidX Security
+- [ ] Add dependencies: OkHttp, Kotlin Coroutines, WorkManager, AndroidX Security, Room
 - [ ] `SettingsActivity` / `SettingsFragment` to configure server URL, client ID, credentials
 - [ ] `SettingsRepository` backed by `EncryptedSharedPreferences`
 - [ ] Basic app icon and manifest
@@ -270,20 +322,27 @@ reload the file.
 - [ ] Constraint: `NetworkType.CONNECTED`
 - [ ] Cancel/reschedule when settings change
 
-### Phase 7 — Error handling & UX
+### Phase 7 — Main UI, manual sync & sync log
 
-- [ ] Persistent notification showing sync status (In sync / Syncing / Error)
+- [ ] `MainActivity` with sync status header (current state + last sync time)
+- [ ] "Sync now" button that calls `SyncRepository.sync()` and shows an inline progress indicator while running; disabled while a sync is already in flight
+- [ ] `SyncLogEntry` Room entity and DAO (see Sync Log design below)
+- [ ] `SyncLogAdapter` + `RecyclerView` displaying the rolling sync log
+- [ ] `SyncRepository` writes a `SyncLogEntry` at the end of every sync attempt
+- [ ] Persistent notification showing sync status (Idle / Syncing / Error) with a "Sync now" action
+
+### Phase 8 — Error handling
+
 - [ ] User-visible error after 3 consecutive failures (notification + in-app banner)
-- [ ] Manual "Sync now" button in settings
 - [ ] Conflict-resolved notification ("Database merged with remote changes")
 
-### Phase 8 — Security & hardening
+### Phase 9 — Security & hardening
 
 - [ ] HTTPS support (custom trust anchors for self-signed certs)
 - [ ] Wipe local file on credential change / logout
 - [ ] Review URI permission grants: ensure `FLAG_GRANT_READ_URI_PERMISSION` / `FLAG_GRANT_WRITE_URI_PERMISSION` are scoped correctly
 
-### Phase 9 — Testing & polish
+### Phase 10 — Testing & polish
 
 - [ ] Integration test: MockWebServer simulating all four sync scenarios
 - [ ] End-to-end test with a real kdbx-git server (Docker Compose in CI)
