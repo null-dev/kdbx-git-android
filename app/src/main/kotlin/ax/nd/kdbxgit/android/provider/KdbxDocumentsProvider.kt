@@ -58,7 +58,7 @@ class KdbxDocumentsProvider : DocumentsProvider() {
         return MatrixCursor(projection ?: DEFAULT_ROOT_PROJECTION).apply {
             newRow().apply {
                 add(Root.COLUMN_ROOT_ID,     ROOT_ID)
-                add(Root.COLUMN_DOCUMENT_ID, SyncRepository.DB_DOC_ID)
+                add(Root.COLUMN_DOCUMENT_ID, ROOT_DOC_ID)
                 add(Root.COLUMN_TITLE,       "kdbx-git sync")
                 add(Root.COLUMN_ICON,        R.mipmap.ic_launcher)
                 add(Root.COLUMN_FLAGS,       Root.FLAG_LOCAL_ONLY)
@@ -72,7 +72,10 @@ class KdbxDocumentsProvider : DocumentsProvider() {
     override fun queryDocument(documentId: String?, projection: Array<out String>?): Cursor {
         return MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION).also { cursor ->
             cursor.setNotificationUri(context!!.contentResolver, docUri())
-            addDocumentRow(cursor)
+            when (documentId) {
+                ROOT_DOC_ID -> addRootDirRow(cursor)
+                else        -> addFileRow(cursor)
+            }
         }
     }
 
@@ -83,11 +86,22 @@ class KdbxDocumentsProvider : DocumentsProvider() {
     ): Cursor {
         return MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION).also { cursor ->
             cursor.setNotificationUri(context!!.contentResolver, docUri())
-            addDocumentRow(cursor)
+            addFileRow(cursor)
         }
     }
 
-    private fun addDocumentRow(cursor: MatrixCursor) {
+    private fun addRootDirRow(cursor: MatrixCursor) {
+        cursor.newRow().apply {
+            add(Document.COLUMN_DOCUMENT_ID,   ROOT_DOC_ID)
+            add(Document.COLUMN_DISPLAY_NAME,  "kdbx-git sync")
+            add(Document.COLUMN_MIME_TYPE,     Document.MIME_TYPE_DIR)
+            add(Document.COLUMN_FLAGS,         0)
+            add(Document.COLUMN_SIZE,          0L)
+            add(Document.COLUMN_LAST_MODIFIED, 0L)
+        }
+    }
+
+    private fun addFileRow(cursor: MatrixCursor) {
         val dbFile = syncRepository.dbFile
         cursor.newRow().apply {
             add(Document.COLUMN_DOCUMENT_ID,   SyncRepository.DB_DOC_ID)
@@ -184,7 +198,8 @@ class KdbxDocumentsProvider : DocumentsProvider() {
     // ── Constants ─────────────────────────────────────────────────────────
 
     companion object {
-        private const val ROOT_ID       = "kdbx-git-root"
+        private const val ROOT_ID        = "kdbx-git-root"
+        private const val ROOT_DOC_ID    = "root"
         private const val KDBX_MIME_TYPE = "application/octet-stream"
 
         private val DEFAULT_ROOT_PROJECTION = arrayOf(
