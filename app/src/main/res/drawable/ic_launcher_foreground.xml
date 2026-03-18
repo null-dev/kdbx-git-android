@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple key silhouette -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 a14,14 0 1,1 0,28 a14,14 0 0,1 0,-28z
+                          M54,58 l0,20 l-6,0 l0,-6 l-6,0 l0,-6 l6,0 l0,-8z" />
+</vector>
