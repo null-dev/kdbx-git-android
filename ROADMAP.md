@@ -312,15 +312,15 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] Implement the four sync scenarios as a single `suspend fun sync()` function
 - [x] Atomic file replacement (write to temp, then `rename`)
 
-### Phase 4 — DocumentsProvider
+### Phase 4 — DocumentsProvider ✓
 
-- [ ] `KdbxDocumentsProvider` skeleton, authority declared in manifest with `<provider android:exported="true" android:grantUriPermissions="true">`
-- [ ] `queryRoots()` — single root row
-- [ ] `queryDocument()` / `queryChildDocuments()` — single document row with live metadata
-- [ ] `openDocument("r")` — read-only `ParcelFileDescriptor`
-- [ ] `openDocument("rw")` — staging-file write via `ProxyFileDescriptorCallback`, on-close triggers sync
-- [ ] `ReadWriteLock` guarding file access
-- [ ] `notifyChange` after successful pulls
+- [x] `KdbxDocumentsProvider` skeleton, authority declared in manifest with `<provider android:exported="true" android:grantUriPermissions="true">`
+- [x] `queryRoots()` — single root row
+- [x] `queryDocument()` / `queryChildDocuments()` — single document row with live metadata
+- [x] `openDocument("r")` — read-only `ParcelFileDescriptor`
+- [x] `openDocument("rw")` — staging-file write with on-close listener, atomically commits and triggers sync
+- [x] `ReadWriteLock` guarding file access
+- [x] `notifyChange` after successful pulls
 
 ### Phase 5 — Sync service
 
