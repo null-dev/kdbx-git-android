@@ -13,10 +13,8 @@ import android.provider.DocumentsProvider
 import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.R
 import ax.nd.kdbxgit.android.sync.SyncRepository
+import ax.nd.kdbxgit.android.sync.SyncService
 import ax.nd.kdbxgit.android.sync.SyncTrigger
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -172,11 +170,9 @@ class KdbxDocumentsProvider : DocumentsProvider() {
         // Notify any open cursors (e.g. the system picker) that metadata changed.
         context!!.contentResolver.notifyChange(docUri(), null)
 
-        // Trigger a push sync. SyncRepository.syncMutex ensures at most one sync runs
-        // at a time; concurrent writes will coalesce into the next run.
-        CoroutineScope(Dispatchers.IO).launch {
-            syncRepository.sync(SyncTrigger.WRITE)
-        }
+        // Route through SyncService so the sync runs inside the service's managed
+        // coroutine scope rather than a fire-and-forget scope.
+        SyncService.syncNow(context!!, SyncTrigger.WRITE)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

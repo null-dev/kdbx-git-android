@@ -22,6 +22,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import ax.nd.kdbxgit.android.settings.SettingsScreen
+import ax.nd.kdbxgit.android.sync.SyncService
 import ax.nd.kdbxgit.android.ui.theme.KdbxGitTheme
 
 class MainActivity : ComponentActivity() {
@@ -32,6 +33,16 @@ class MainActivity : ComponentActivity() {
             KdbxGitTheme {
                 KdbxGitApp()
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Ensure the service is running whenever the user opens the app.
+        // If settings haven't been configured yet sync() returns immediately, so this is safe.
+        val app = application as KdbxGitApplication
+        if (app.settingsRepository.serverConfig.value != null) {
+            SyncService.start(this)
         }
     }
 }

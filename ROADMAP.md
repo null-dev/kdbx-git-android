@@ -322,12 +322,12 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] `ReadWriteLock` guarding file access
 - [x] `notifyChange` after successful pulls
 
-### Phase 5 — Sync service
+### Phase 5 — Sync service ✓
 
-- [ ] `SyncService` as a started foreground service with persistent notification
-- [ ] `ConnectivityManager.NetworkCallback` → trigger sync on network restore
-- [ ] Wire `SyncService` start/stop to app lifecycle and settings changes
-- [ ] _(UnifiedPush integration deferred — see server push note below)_
+- [x] `SyncService` as a started foreground service with persistent notification
+- [x] `ConnectivityManager.NetworkCallback` → trigger sync on network restore
+- [x] Wire `SyncService` start/stop to app lifecycle and settings changes
+- [x] _(UnifiedPush integration deferred — see server push note below)_
 
 ### Phase 6 — WorkManager background sync
 
