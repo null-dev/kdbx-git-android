@@ -187,6 +187,7 @@ Each sync attempt — successful or not — appends one `SyncLogEntry` to a Room
 SyncLogEntry {
     id          : Long (auto-generated primary key)
     timestamp   : Long (epoch ms, indexed for ordering)
+    trigger     : Enum { MANUAL, WRITE, CONNECTIVITY, PERIODIC, PUSH }
     type        : Enum { PULL, PUSH, PUSH_PULL }   // what was attempted
     outcome     : Enum { SUCCESS, MERGED, NO_CHANGE, FAILURE }
     bytesDown   : Long   // bytes received in GET (0 if no pull)
@@ -194,6 +195,19 @@ SyncLogEntry {
     durationMs  : Long   // wall time for the entire sync attempt
     errorMessage: String? // null on success; short message on failure
 }
+```
+
+`trigger` values:
+
+| Value | Meaning |
+|---|---|
+| `MANUAL` | User pressed "Sync now" |
+| `WRITE` | Local database write detected by DocumentsProvider |
+| `CONNECTIVITY` | Network became available after offline period |
+| `PERIODIC` | WorkManager periodic job fired |
+| `PUSH` | UnifiedPush notification received (future) |
+
+```
 ```
 
 `MERGED` means the server returned a database that differed from both the uploaded local
@@ -214,9 +228,9 @@ The main activity shows the log as a `RecyclerView` below the sync status header
 │  kdbx-git sync          [Sync now ▶] │
 │  Status: Idle  •  Last sync: 2 m ago │
 ├──────────────────────────────────────┤
-│  17 Mar 14:32  PUSH_PULL  ✓ Merged   │
-│  17 Mar 11:15  PULL       ✓ OK       │
-│  17 Mar 09:01  PUSH       ✗ Network  │
+│  17 Mar 14:32  Manual      PUSH_PULL  ✓ Merged   │
+│  17 Mar 11:15  Periodic    PULL       ✓ OK       │
+│  17 Mar 09:01  Write       PUSH       ✗ Network  │
 │  …                                   │
 └──────────────────────────────────────┘
 ```
