@@ -1,0 +1,8 @@
+/.idea
+/.vscode/mise-tools
+
+.gradle/
+.idea/
+build/
+.DS_Store
+local.properties
