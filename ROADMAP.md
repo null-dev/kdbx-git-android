@@ -305,12 +305,12 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] SHA-256 hash utility
 - [x] Unit tests with MockWebServer
 
-### Phase 3 — Local storage & sync state
+### Phase 3 — Local storage & sync state ✓
 
-- [ ] Store KDBX file in `filesDir` (not external storage)
-- [ ] `SyncRepository`: `last_synced_hash` and `local_dirty` in `SharedPreferences`
-- [ ] Implement the four sync scenarios as a single `suspend fun sync()` function
-- [ ] Atomic file replacement (write to temp, then `rename`)
+- [x] Store KDBX file in `filesDir` (not external storage)
+- [x] `SyncRepository`: `last_synced_hash` and `local_dirty` in `SharedPreferences`
+- [x] Implement the four sync scenarios as a single `suspend fun sync()` function
+- [x] Atomic file replacement (write to temp, then `rename`)
 
 ### Phase 4 — DocumentsProvider
 
