@@ -102,6 +102,23 @@ class WebDavClient(private val config: ServerConfig) {
         }
     }
 
+    /**
+     * Fetches the server's VAPID public key, required by the embedded FCM distributor.
+     * Returns the raw Base64url-encoded public key string.
+     * Throws [WebDavException] on a non-2xx response.
+     */
+    suspend fun fetchVapidPublicKey(): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(vapidPublicKeyUrl())
+            .get()
+            .build()
+        http.newCall(request).execute().use { response ->
+            response.requireSuccess()
+            val json = org.json.JSONObject(response.body.string())
+            json.getString("public_key")
+        }
+    }
+
     private fun dbUrl(): String {
         val base = config.serverUrl.trimEnd('/')
         return "$base/dav/${config.clientId}/database.kdbx"
@@ -110,6 +127,11 @@ class WebDavClient(private val config: ServerConfig) {
     private fun pushEndpointUrl(): String {
         val base = config.serverUrl.trimEnd('/')
         return "$base/push/${config.clientId}/endpoint"
+    }
+
+    private fun vapidPublicKeyUrl(): String {
+        val base = config.serverUrl.trimEnd('/')
+        return "$base/push/${config.clientId}/vapid-public-key"
     }
 
     private fun Response.requireSuccess() {

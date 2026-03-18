@@ -51,6 +51,8 @@ import androidx.navigation.compose.rememberNavController
 import ax.nd.kdbxgit.android.push.PushRegistrationWorker
 import ax.nd.kdbxgit.android.push.registerUpDistributor
 import io.github.oshai.kotlinlogging.KotlinLogging
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import ax.nd.kdbxgit.android.settings.SettingsScreen
 import ax.nd.kdbxgit.android.sync.SyncLogEntry
 import ax.nd.kdbxgit.android.sync.SyncOutcome
@@ -82,7 +84,7 @@ class MainActivity : ComponentActivity() {
         if (app.settingsRepository.serverConfig.value != null) {
             SyncWorker.schedulePeriodicSync(this, app.settingsRepository.pollIntervalMinutes.value)
             logger.info { "Detecting UP distributor on start" }
-            registerUpDistributor(this)
+            lifecycleScope.launch { registerUpDistributor(this@MainActivity) }
             PushRegistrationWorker.schedulePeriodicRefresh(this)
         }
     }

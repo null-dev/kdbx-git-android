@@ -6,8 +6,10 @@ import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.push.PushRegistrationWorker
 import ax.nd.kdbxgit.android.push.registerUpDistributor
 import ax.nd.kdbxgit.android.sync.SyncWorker
+import androidx.lifecycle.viewModelScope
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 private val logger = KotlinLogging.logger {}
 
@@ -55,7 +57,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         // (Re-)register with the UP distributor. Falls back to getDistributors() broadcast scan
         // when the deeplink mechanism fails (e.g. embedded FCM distributor has no deeplink Activity).
         logger.info { "Detecting UP distributor after settings save" }
-        registerUpDistributor(getApplication())
+        viewModelScope.launch { registerUpDistributor(getApplication()) }
         PushRegistrationWorker.schedulePeriodicRefresh(getApplication())
     }
 }
