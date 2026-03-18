@@ -5,8 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.push.PushRegistrationWorker
 import ax.nd.kdbxgit.android.sync.SyncWorker
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.StateFlow
 import org.unifiedpush.android.connector.UnifiedPush
+
+private val logger = KotlinLogging.logger {}
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -51,8 +54,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         // (Re-)register with the UP distributor. tryUseCurrentOrDefaultDistributor
         // auto-selects the embedded FCM distributor when no external one is installed.
+        logger.info { "Detecting UP distributor after settings save" }
         UnifiedPush.tryUseCurrentOrDefaultDistributor(getApplication()) { success ->
-            if (success) UnifiedPush.register(getApplication())
+            if (success) {
+                val distributor = UnifiedPush.getSavedDistributor(getApplication())
+                logger.info { "UP distributor selected: $distributor — registering" }
+                UnifiedPush.register(getApplication())
+            } else {
+                logger.warn { "No UP distributor available" }
+            }
         }
         PushRegistrationWorker.schedulePeriodicRefresh(getApplication())
     }
