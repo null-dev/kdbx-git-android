@@ -15,7 +15,7 @@ server.
 |---|---|
 | `GET /dav/{client_id}/database.kdbx` | Download current merged KDBX for this client |
 | `PUT /dav/{client_id}/database.kdbx` | Upload a modified KDBX; server merges it into `main` |
-| `GET /sync/{client_id}/events` | SSE stream; fires `branch-updated` when `main` advances |
+| `GET /sync/{client_id}/events` | SSE stream; fires `branch-updated` when `main` advances — **not currently used, see server push below** |
 
 Wire format: raw, encrypted KDBX 4.x bytes. Auth: HTTP Basic.
 
@@ -58,7 +58,7 @@ From these, the sync engine derives the scenario:
 
 ### 2. Remote ahead (local clean)
 
-Triggered by: SSE `branch-updated` event, periodic poll, or explicit user refresh.
+Triggered by: UnifiedPush notification (planned — see server push note below), periodic poll, or explicit user refresh.
 
 1. `GET /dav/{id}/database.kdbx` → compare SHA-256 with `last_synced_hash`.
 2. If different: overwrite local file, update `last_synced_hash`.
@@ -101,7 +101,7 @@ No client-side KDBX merge is needed. All conflict resolution is handled server-s
 - A `ConnectivityManager.NetworkCallback` watches for network availability and triggers a
   sync immediately on reconnection.
 - A periodic WorkManager job (configurable interval, default 15 min) provides a backstop for
-  environments where SSE or connectivity callbacks are unreliable.
+  environments where push notifications or connectivity callbacks are unreliable.
 
 ### 6. PUT succeeds but GET fails (partial sync)
 
@@ -126,32 +126,54 @@ No client-side KDBX merge is needed. All conflict resolution is handled server-s
 
 ---
 
-## ContentProvider Design
+## DocumentsProvider Design
 
-### URI scheme
+The app implements a `DocumentsProvider` (a subclass of `ContentProvider` that integrates
+with Android's **Storage Access Framework**) rather than a plain `ContentProvider`.
+
+### Why DocumentsProvider, not ContentProvider?
+
+A plain `ContentProvider` is either fully private (`android:exported="false"`, no other app
+can reach it at all) or fully public (`exported="true"`, any app can construct the URI and
+read the database without user consent). Neither is right.
+
+A `DocumentsProvider` must be exported — the system requires it — but **all access is
+mediated by the system file picker** (`ACTION_OPEN_DOCUMENT` / `ACTION_CREATE_DOCUMENT`).
+An app that wants the database URI must ask the user to choose it through the picker.
+Without that explicit user gesture, no permission grant exists and any attempted access is
+rejected by the framework. Apps cannot guess or construct a valid URI on their own.
+
+This is exactly the desired security model: the database is invisible to every app until
+the user consciously hands it out through the picker, just like any other document on the
+device.
+
+### Structure
+
+The provider exposes one root and one document:
 
 ```
-content://com.example.kdbxgit/database
+Root  "kdbx-git sync"
+└── Document  "database.kdbx"   (MIME: application/octet-stream)
 ```
 
-A single resource. Clients open it as a file descriptor (like `FileProvider`).
+### Key operations
 
-### Operations
-
-| Method | Behaviour |
+| Operation | Behaviour |
 |---|---|
-| `openFile(uri, "r")` | Return a read-only `ParcelFileDescriptor` to the local KDBX file |
-| `openFile(uri, "w")` | Return a write-redirect `ParcelFileDescriptor`; on close, set `local_dirty = true` and trigger sync |
-| `query(uri, ...)` | Return a single-row cursor with `{_id, size, last_synced_ms, sync_status}` for status display |
-| `getType(uri)` | `application/octet-stream` |
+| `queryRoots()` | Return one root row describing the sync provider |
+| `queryDocument(docId)` | Return metadata row: display name, size, last-modified |
+| `queryChildDocuments(parentDocId)` | Return the single `database.kdbx` document row |
+| `openDocument(docId, mode, signal)` | Open read or read/write `ParcelFileDescriptor` |
 
-`openFile` in write mode uses a pipe/temp-file approach: the caller writes to a staging
-file; when the descriptor is closed, the staging file atomically replaces the live file.
+`openDocument` in write mode uses a staging-file approach: the caller writes to a temp
+file; a `ProxyFileDescriptorCallback` intercepts the close, atomically replaces the live
+file, then triggers sync.
 
-### ContentObserver notifications
+### Notifications
 
-After every successful pull, `getContext().getContentResolver().notifyChange(DATABASE_URI, null)`
-is called so that any registered observers (e.g. an open KeePass app) can reload.
+After every successful pull, `getContext().getContentResolver().notifyChange(docUri, null)`
+is called so that any app holding the document URI (e.g. KeePassDX) is notified and can
+reload the file.
 
 ---
 
@@ -159,33 +181,30 @@ is called so that any registered observers (e.g. an open KeePass app) can reload
 
 ```
 ┌─────────────────────────┐
-│  KeePass client app     │
+│  KeePass client app     │  e.g. KeePassDX
 │  (KeePassDX, etc.)      │
 └──────────┬──────────────┘
-           │ content://…/database  (openFile r/w)
+           │ user picks file via system picker
+           │ (ACTION_OPEN_DOCUMENT)
+           │ content://…/document/kdbx  (openDocument r/w)
 ┌──────────▼──────────────┐
-│  KdbxContentProvider    │  ← Android ContentProvider
-│  (read/write gated via  │
+│  KdbxDocumentsProvider  │  ← DocumentsProvider (SAF)
+│  (read/write gated via  │    access only via system picker
 │   ReadWriteLock)        │
 └──────────┬──────────────┘
            │ file write → dirty flag
 ┌──────────▼──────────────┐
-│  SyncService            │  ← Foreground service / WorkManager worker
+│  SyncService            │  ← Foreground service
 │  (coroutine-based)      │
-│  - SSE listener         │
 │  - ConnectivityCallback │
 │  - Periodic WorkManager │
+│  - (UnifiedPush, later) │
 └──────────┬──────────────┘
            │ HTTP Basic + raw KDBX bytes
 ┌──────────▼──────────────┐
 │  WebDavClient           │  ← OkHttp wrapper
 │  GET / PUT              │
 │  /dav/{id}/database.kdbx│
-└──────────┬──────────────┘
-           │ SSE
-┌──────────▼──────────────┐
-│  SseListener (OkHttp)   │  ← /sync/{id}/events
-│  → triggers pull        │
 └─────────────────────────┘
 ```
 
@@ -193,11 +212,10 @@ is called so that any registered observers (e.g. an open KeePass app) can reload
 
 | Class | Responsibility |
 |---|---|
-| `KdbxContentProvider` | Android ContentProvider; file access, observer notifications |
+| `KdbxDocumentsProvider` | SAF DocumentsProvider; file access, observer notifications, picker integration |
 | `SyncRepository` | Owns `last_synced_hash`, `local_dirty`, sync logic |
-| `SyncService` | Foreground service; owns SSE connection and coroutine scope |
+| `SyncService` | Foreground service; owns connectivity callback and coroutine scope |
 | `WebDavClient` | OkHttp-based GET/PUT with Basic Auth |
-| `SseClient` | OkHttp streaming; parses `branch-updated` events |
 | `SyncWorker` | WorkManager `CoroutineWorker` for periodic background sync |
 | `SettingsRepository` | Stores server URL, client ID, username, password (EncryptedSharedPreferences) |
 
@@ -228,22 +246,22 @@ is called so that any registered observers (e.g. an open KeePass app) can reload
 - [ ] Implement the four sync scenarios as a single `suspend fun sync()` function
 - [ ] Atomic file replacement (write to temp, then `rename`)
 
-### Phase 4 — ContentProvider
+### Phase 4 — DocumentsProvider
 
-- [ ] `KdbxContentProvider` skeleton, URI authority registered in manifest
-- [ ] `openFile("r")` — read-only `ParcelFileDescriptor` via `openPipeHelper`
-- [ ] `openFile("w")` — staging-file write, on-close triggers sync
-- [ ] `query()` returning status row
+- [ ] `KdbxDocumentsProvider` skeleton, authority declared in manifest with `<provider android:exported="true" android:grantUriPermissions="true">`
+- [ ] `queryRoots()` — single root row
+- [ ] `queryDocument()` / `queryChildDocuments()` — single document row with live metadata
+- [ ] `openDocument("r")` — read-only `ParcelFileDescriptor`
+- [ ] `openDocument("rw")` — staging-file write via `ProxyFileDescriptorCallback`, on-close triggers sync
 - [ ] `ReadWriteLock` guarding file access
 - [ ] `notifyChange` after successful pulls
 
-### Phase 5 — Sync service & SSE
+### Phase 5 — Sync service
 
 - [ ] `SyncService` as a started foreground service with persistent notification
-- [ ] `SseClient` using OkHttp `EventSource` (or manual chunked-read); parse `branch-updated`
-- [ ] Reconnect SSE with exponential back-off on disconnect
 - [ ] `ConnectivityManager.NetworkCallback` → trigger sync on network restore
 - [ ] Wire `SyncService` start/stop to app lifecycle and settings changes
+- [ ] _(UnifiedPush integration deferred — see server push note below)_
 
 ### Phase 6 — WorkManager background sync
 
@@ -261,10 +279,9 @@ is called so that any registered observers (e.g. an open KeePass app) can reload
 
 ### Phase 8 — Security & hardening
 
-- [ ] Enforce `android:exported="false"` on ContentProvider (or signature-level permission)
-- [ ] Optional: allow-list of trusted client app signatures
 - [ ] HTTPS support (custom trust anchors for self-signed certs)
 - [ ] Wipe local file on credential change / logout
+- [ ] Review URI permission grants: ensure `FLAG_GRANT_READ_URI_PERMISSION` / `FLAG_GRANT_WRITE_URI_PERMISSION` are scoped correctly
 
 ### Phase 9 — Testing & polish
 
@@ -275,19 +292,40 @@ is called so that any registered observers (e.g. an open KeePass app) can reload
 
 ---
 
-## Open Questions
+## Resolved Design Decisions
 
-1. **Should the ContentProvider be exported?** Exporting to all apps is convenient but
-   exposes the database to any installed app. Using a `signature`-level permission restricts
-   access to apps signed with the same key (e.g. a companion KeePass fork).
+**ContentProvider access control** — Solved by using `DocumentsProvider` (SAF). The
+provider is exported (required), but Android's Storage Access Framework ensures no app can
+read or write the database without an explicit user gesture through the system file picker.
+There are no guessable URIs and no ambient permissions.
 
-2. **Client-side KDBX merge (future)?** If offline edits from two devices need to be merged
-   before the user is back online, a local merge would be required. For now this is out of
-   scope; the server handles merges on the next sync.
+**Client-side KDBX merge** — Not planned. All merge logic lives on the server
+(`keepass-nd` entry-level union merge). Keeping merge complexity out of the client is a
+deliberate long-term choice, not just a deferral.
 
-3. **Key-file support?** The kdbx-git server supports a `keyfile` for database encryption in
-   addition to the master password. The app should eventually support delivering the key file
-   alongside the KDBX file.
+**Key-file support** — Not supported. The KDBX master password is sufficient; the server
+config's `keyfile` option is for server operators who want extra protection on the git
+store, not something that changes per-sync. There is nothing to sync.
 
-4. **Multiple databases?** The current design supports exactly one database per app install.
-   Multiple databases would require separate app instances or a more complex URI scheme.
+**Multiple databases** — Out of scope. The kdbx-git server itself supports only one
+database per deployment, so there is nothing to map to on the client side.
+
+---
+
+## Server Push (Future Work)
+
+The kdbx-git server exposes an SSE endpoint (`GET /sync/{id}/events`) that fires a
+`branch-updated` event whenever `main` advances. Using SSE for reactive sync would require
+keeping a persistent HTTP connection open at all times, which drains battery unacceptably
+on mobile.
+
+The planned alternative is **UnifiedPush**: an open push-notification standard that
+delivers lightweight wakeup messages through a separate push provider (e.g. Ntfy,
+Gotify). This requires server-side support that does not exist yet. When the kdbx-git
+server gains UnifiedPush support, the Android app will register a receiver that triggers a
+sync on receipt of a push message — no persistent connection needed.
+
+Until then, sync is driven by:
+1. **Write-triggered push** — immediate sync after a local database write
+2. **ConnectivityCallback** — sync on network reconnection after offline period
+3. **Periodic WorkManager job** — backstop poll (default every 15 min)
