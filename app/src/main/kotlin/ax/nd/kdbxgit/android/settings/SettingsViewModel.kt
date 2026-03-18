@@ -49,10 +49,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         repository.savePollInterval(pollIntervalMinutes)
         SyncWorker.schedulePeriodicSync(getApplication(), pollIntervalMinutes)
 
-        // (Re-)register with the UP distributor. If a distributor is installed this
-        // triggers onNewEndpoint → PushRegistrationWorker, registering the endpoint
-        // with the (possibly new) server. If no distributor is installed this is a no-op.
-        UnifiedPush.registerApp(getApplication())
+        // (Re-)register with the UP distributor. tryUseCurrentOrDefaultDistributor
+        // auto-selects the embedded FCM distributor when no external one is installed.
+        UnifiedPush.tryUseCurrentOrDefaultDistributor(getApplication()) { success ->
+            if (success) UnifiedPush.register(getApplication())
+        }
         PushRegistrationWorker.schedulePeriodicRefresh(getApplication())
     }
 }

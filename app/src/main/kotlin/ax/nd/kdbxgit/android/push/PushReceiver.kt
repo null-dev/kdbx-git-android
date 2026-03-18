@@ -2,6 +2,9 @@ package ax.nd.kdbxgit.android.push
 
 import android.content.Context
 import org.unifiedpush.android.connector.MessagingReceiver
+import org.unifiedpush.android.connector.FailedReason
+import org.unifiedpush.android.connector.data.PushEndpoint
+import org.unifiedpush.android.connector.data.PushMessage
 import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.sync.SyncTrigger
 import ax.nd.kdbxgit.android.sync.SyncWorker
@@ -18,13 +21,13 @@ import ax.nd.kdbxgit.android.sync.SyncWorker
  */
 class PushReceiver : MessagingReceiver() {
 
-    override fun onNewEndpoint(context: Context, endpoint: String, instance: String) {
+    override fun onNewEndpoint(context: Context, endpoint: PushEndpoint, instance: String) {
         val repo = (context.applicationContext as KdbxGitApplication).settingsRepository
-        repo.savePushEndpoint(endpoint)
+        repo.savePushEndpoint(endpoint.url)
         PushRegistrationWorker.enqueue(context)
     }
 
-    override fun onMessage(context: Context, message: ByteArray, instance: String) {
+    override fun onMessage(context: Context, message: PushMessage, instance: String) {
         SyncWorker.enqueueSyncNow(context, SyncTrigger.PUSH)
     }
 
@@ -36,7 +39,7 @@ class PushReceiver : MessagingReceiver() {
         repo.clearPushEndpoint()
     }
 
-    override fun onRegistrationFailed(context: Context, instance: String) {
+    override fun onRegistrationFailed(context: Context, reason: FailedReason, instance: String) {
         val repo = (context.applicationContext as KdbxGitApplication).settingsRepository
         repo.clearPushEndpoint()
     }

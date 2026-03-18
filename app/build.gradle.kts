@@ -5,6 +5,13 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// embedded-fcm-distributor transitively pulls in tink (JVM artefact), which duplicates
+// classes already provided by tink-android (pulled in via androidx.security:security-crypto).
+// Exclude the JVM variant globally; tink-android is the correct Android replacement.
+configurations.all {
+    exclude(group = "com.google.crypto.tink", module = "tink")
+}
+
 android {
     namespace   = "ax.nd.kdbxgit.android"
     compileSdk  = 35
@@ -34,12 +41,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    kotlinOptions {
-        jvmTarget = "21"
-    }
 
     buildFeatures {
         compose = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
     }
 }
 
@@ -63,6 +73,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.unifiedpush)
+    implementation(libs.unifiedpush.embedded.fcm)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
