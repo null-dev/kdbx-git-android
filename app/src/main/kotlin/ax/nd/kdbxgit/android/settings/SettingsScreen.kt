@@ -234,9 +234,14 @@ fun SettingsScreen(
             val distributorPackage = remember(pushEndpoint) {
                 UnifiedPush.getSavedDistributor(context)
             }
+            val isEmbeddedFcm = distributorPackage == context.packageName
             val statusText = when {
+                pushEndpoint != null && isEmbeddedFcm ->
+                    "Active — via embedded FCM (Google Play Services)"
                 pushEndpoint != null ->
                     "Active — distributor: $distributorPackage"
+                distributorPackage != null && isEmbeddedFcm ->
+                    "Embedded FCM found, registration pending\u2026"
                 distributorPackage != null ->
                     "Distributor found, registration pending\u2026"
                 else ->
