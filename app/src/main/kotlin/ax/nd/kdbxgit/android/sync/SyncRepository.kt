@@ -3,16 +3,17 @@ package ax.nd.kdbxgit.android.sync
 import android.content.Context
 import android.provider.DocumentsContract
 import ax.nd.kdbxgit.android.settings.SettingsRepository
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 class SyncRepository(
     private val context: Context,
     private val settingsRepository: SettingsRepository,
+    private val syncLogDao: SyncLogDao,
 ) {
     /** The live KDBX file served to KeePass clients via KdbxDocumentsProvider. */
     val dbFile = File(context.filesDir, DB_FILENAME)
@@ -32,7 +33,7 @@ class SyncRepository(
 
     // Ensures at most one sync runs at a time. A second caller will suspend until
     // the first finishes, then run with the freshest dirty/hash state.
-    private val syncMutex = Mutex()
+    val syncMutex = Mutex()
 
     /**
      * Called by [ax.nd.kdbxgit.android.provider.KdbxDocumentsProvider] after a
@@ -56,45 +57,47 @@ class SyncRepository(
      * On network or server errors [syncStatus] is set to [SyncStatus.Error].
      * The dirty flag and last hash are only updated on success, so the next
      * sync call will retry cleanly.
-     *
-     * @param trigger What initiated this sync (used by the sync log in Phase 7).
      */
     suspend fun sync(trigger: SyncTrigger) {
         val config = settingsRepository.serverConfig.value ?: return
 
         syncMutex.withLock {
+            val startMs = System.currentTimeMillis()
             val client = WebDavClient(config)
+            var bytesDown = 0L
+            var bytesUp = 0L
+
             try {
                 if (!localDirty || !dbFile.exists()) {
                     // ── Clean path: check whether remote has advanced ────────────
                     _syncStatus.value = SyncStatus.Pulling
                     val remoteBytes = client.pull()
-                    val remoteHash  = remoteBytes.sha256Hex()
+                    bytesDown = remoteBytes.size.toLong()
+                    val remoteHash = remoteBytes.sha256Hex()
 
                     if (remoteHash != lastSyncedHash) {
-                        // Remote ahead (or first launch) — overwrite local.
                         writeAtomically(remoteBytes)
                         prefs.edit().putString(KEY_LAST_HASH, remoteHash).apply()
                         notifyFileChanged()
-                        // TODO Phase 7: log trigger / PULL / SUCCESS
+                        log(trigger, SyncType.PULL, SyncOutcome.SUCCESS, bytesDown, 0L, startMs)
+                    } else {
+                        log(trigger, SyncType.PULL, SyncOutcome.NO_CHANGE, 0L, 0L, startMs)
                     }
-                    // else: in-sync — TODO Phase 7: log trigger / PULL / NO_CHANGE
 
                 } else {
-                    // ── Dirty path: push → pull (handles both "local ahead" and "diverged") ──
+                    // ── Dirty path: push → pull ──────────────────────────────────
                     _syncStatus.value = SyncStatus.Pushing
                     val localBytes = dbFile.readBytes()
                     client.push(localBytes)
-                    // NOTE: if push succeeds but the following pull throws, local_dirty
-                    // stays true and last_synced_hash is unchanged, so the next sync
-                    // will retry the full push → pull cycle (ROADMAP scenario 6).
+                    bytesUp = localBytes.size.toLong()
+                    // If push succeeds but the following pull throws, local_dirty stays
+                    // true and last_synced_hash is unchanged → next sync retries full cycle.
 
                     _syncStatus.value = SyncStatus.Pulling
                     val remoteBytes = client.pull()
-                    val remoteHash  = remoteBytes.sha256Hex()
+                    bytesDown = remoteBytes.size.toLong()
+                    val remoteHash = remoteBytes.sha256Hex()
 
-                    // Detect server-side merge: remote differs from what we uploaded.
-                    @Suppress("UnnecessaryVariable")
                     val isMerged = remoteHash != localBytes.sha256Hex()
 
                     writeAtomically(remoteBytes)
@@ -103,53 +106,66 @@ class SyncRepository(
                         .putBoolean(KEY_LOCAL_DIRTY, false)
                         .apply()
                     notifyFileChanged()
-                    // TODO Phase 7: log trigger / PUSH_PULL / (if isMerged MERGED else SUCCESS)
+
+                    val outcome = if (isMerged) SyncOutcome.MERGED else SyncOutcome.SUCCESS
+                    log(trigger, SyncType.PUSH_PULL, outcome, bytesDown, bytesUp, startMs)
                 }
 
                 _syncStatus.value = SyncStatus.Idle
 
             } catch (e: Exception) {
-                _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error")
-                // TODO Phase 7: log trigger / … / FAILURE
+                val msg = e.message ?: "Unknown error"
+                _syncStatus.value = SyncStatus.Error(msg)
+                val type = if (bytesUp > 0) SyncType.PUSH_PULL else SyncType.PULL
+                log(trigger, type, SyncOutcome.FAILURE, bytesDown, bytesUp, startMs, msg)
                 // TODO Phase 8: exponential back-off; user notification after 3 failures
             }
         }
     }
 
-    /**
-     * Writes [bytes] to a temp file beside [dbFile] then atomically renames it.
-     * This ensures KeePass clients reading concurrently never see a partial file.
-     */
+    private suspend fun log(
+        trigger: SyncTrigger,
+        type: SyncType,
+        outcome: SyncOutcome,
+        bytesDown: Long,
+        bytesUp: Long,
+        startMs: Long,
+        errorMessage: String? = null,
+    ) {
+        syncLogDao.insertCapped(
+            SyncLogEntry(
+                timestamp    = System.currentTimeMillis(),
+                trigger      = trigger,
+                type         = type,
+                outcome      = outcome,
+                bytesDown    = bytesDown,
+                bytesUp      = bytesUp,
+                durationMs   = System.currentTimeMillis() - startMs,
+                errorMessage = errorMessage,
+            )
+        )
+    }
+
     private fun writeAtomically(bytes: ByteArray) {
         val tmp = File(dbFile.parentFile, "${dbFile.name}.tmp")
         tmp.writeBytes(bytes)
         if (!tmp.renameTo(dbFile)) {
-            // renameTo is atomic on Linux as long as src and dst are on the same
-            // filesystem (they always are here). The fallback is non-atomic but
-            // should never be reached in practice.
             dbFile.writeBytes(bytes)
             tmp.delete()
         }
     }
 
-    /**
-     * Pings ContentResolver so any app holding a URI to [DB_DOC_ID] (e.g. KeePassDX)
-     * is notified to reload the file.
-     */
     private fun notifyFileChanged() {
         val uri = DocumentsContract.buildDocumentUri(DOCUMENTS_AUTHORITY, DB_DOC_ID)
         context.contentResolver.notifyChange(uri, null)
     }
 
     companion object {
-        /** SAF authority declared in AndroidManifest.xml. */
         const val DOCUMENTS_AUTHORITY = "ax.nd.kdbxgit.android.documents"
+        const val DB_DOC_ID           = "database.kdbx"
 
-        /** Document ID of the single exposed KDBX file. */
-        const val DB_DOC_ID = "database.kdbx"
-
-        private const val DB_FILENAME   = "database.kdbx"
-        private const val PREFS_NAME    = "kdbx_git_sync_state"
+        private const val DB_FILENAME     = "database.kdbx"
+        private const val PREFS_NAME      = "kdbx_git_sync_state"
         private const val KEY_LOCAL_DIRTY = "local_dirty"
         private const val KEY_LAST_HASH   = "last_synced_hash"
     }

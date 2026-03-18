@@ -346,13 +346,13 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] Remove `SyncService`; update `KdbxDocumentsProvider`, `BootReceiver`, `MainActivity`, and `SettingsViewModel` to enqueue WorkManager instead
 - [x] Cancel/reschedule `PeriodicWorkRequest` when settings change
 
-### Phase 7 — Main UI, manual sync & sync log
+### Phase 7 — Main UI, manual sync & sync log ✓
 
-- [ ] `MainActivity` with sync status header (current state + last sync time)
-- [ ] "Sync now" button that calls `SyncRepository.sync()` and shows an inline progress indicator while running; disabled while a sync is already in flight
-- [ ] `SyncLogEntry` Room entity and DAO (see Sync Log design below)
-- [ ] `SyncLogAdapter` + `RecyclerView` displaying the rolling sync log
-- [ ] `SyncRepository` writes a `SyncLogEntry` at the end of every sync attempt
+- [x] `MainActivity` with sync status header (current state + last sync time)
+- [x] "Sync now" button that calls `SyncRepository.sync()` and shows an inline progress indicator while running; disabled while a sync is already in flight
+- [x] `SyncLogEntry` Room entity and DAO (see Sync Log design below)
+- [x] `LazyColumn` (Compose) displaying the rolling sync log
+- [x] `SyncRepository` writes a `SyncLogEntry` at the end of every sync attempt
 
 ### Phase 8 — Error handling
 

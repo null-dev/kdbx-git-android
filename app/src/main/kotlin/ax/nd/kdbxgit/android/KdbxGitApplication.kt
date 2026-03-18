@@ -8,5 +8,7 @@ class KdbxGitApplication : Application() {
 
     val settingsRepository by lazy { SettingsRepository(this) }
 
-    val syncRepository by lazy { SyncRepository(this, settingsRepository) }
+    val database by lazy { AppDatabase.getInstance(this) }
+
+    val syncRepository by lazy { SyncRepository(this, settingsRepository, database.syncLogDao()) }
 }
