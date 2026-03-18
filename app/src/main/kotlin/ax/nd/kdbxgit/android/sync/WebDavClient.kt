@@ -68,9 +68,48 @@ class WebDavClient(private val config: ServerConfig) {
         }
     }
 
+    /**
+     * Registers (or refreshes) a UnifiedPush [endpoint] URL with the server so the server
+     * can deliver wakeup notifications when `main` advances.
+     * Throws [WebDavException] on a non-2xx response.
+     */
+    suspend fun registerPushEndpoint(endpoint: String): Unit = withContext(Dispatchers.IO) {
+        val body = """{"endpoint":"$endpoint"}"""
+            .toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(pushEndpointUrl())
+            .post(body)
+            .build()
+        http.newCall(request).execute().use { response ->
+            response.requireSuccess()
+        }
+    }
+
+    /**
+     * Removes this client's push endpoint registration from the server.
+     * 404 is treated as success (idempotent).
+     * Throws [WebDavException] on other non-2xx responses.
+     */
+    suspend fun deletePushEndpoint(): Unit = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(pushEndpointUrl())
+            .delete()
+            .build()
+        http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful && response.code != 404) {
+                throw WebDavException(response.code, response.message)
+            }
+        }
+    }
+
     private fun dbUrl(): String {
         val base = config.serverUrl.trimEnd('/')
         return "$base/dav/${config.clientId}/database.kdbx"
+    }
+
+    private fun pushEndpointUrl(): String {
+        val base = config.serverUrl.trimEnd('/')
+        return "$base/push/${config.clientId}/endpoint"
     }
 
     private fun Response.requireSuccess() {

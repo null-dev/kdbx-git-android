@@ -64,6 +64,23 @@
             </intent-filter>
         </receiver>
 
+        <!--
+            UnifiedPush receiver — exported so the distributor app can deliver broadcasts.
+            The intent actions are defined by the UnifiedPush specification; no other app
+            uses these actions, and the receiver performs no privileged action on receipt
+            (onMessage simply enqueues a WorkManager job).
+        -->
+        <receiver
+            android:name=".push.PushReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.MESSAGE" />
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED" />
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT" />
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

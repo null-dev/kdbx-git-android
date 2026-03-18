@@ -62,6 +62,7 @@ dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.unifiedpush)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)

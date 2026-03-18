@@ -389,20 +389,19 @@ See `INSTANT_SYNC.md` for the full design.
 - [ ] On 404/410 response from push provider: remove that entry, prune, atomically save `sync-state.json`
 
 **Android client changes:**
-- [ ] Add `com.github.UnifiedPush:android-connector` dependency
-- [ ] Add `WebDavClient` methods: `registerPushEndpoint(url)` / `deletePushEndpoint()`
-- [ ] Implement `PushReceiver : MessagingReceiver` — `onNewEndpoint`, `onMessage`,
+- [x] Add `com.github.UnifiedPush:android-connector` dependency
+- [x] Add `WebDavClient` methods: `registerPushEndpoint(url)` / `deletePushEndpoint()`
+- [x] Implement `PushReceiver : MessagingReceiver` — `onNewEndpoint`, `onMessage`,
       `onUnregistered`; declare in manifest with UP intent filter
-- [ ] Implement `PushRegistrationWorker` — retryable `CoroutineWorker` that POSTs/DELETEs
+- [x] Implement `PushRegistrationWorker` — retryable `CoroutineWorker` that POSTs/DELETEs
       the endpoint to the server
-- [ ] Call `UnifiedPush.registerApp()` after settings are saved and on app start
-- [ ] Call `UnifiedPush.unregisterApp()` on credential wipe / logout
-- [ ] `SettingsRepository`: persist push endpoint URL in `EncryptedSharedPreferences`
-- [ ] `SettingsScreen`: add UnifiedPush status row (active distributor name, or
+- [x] Call `UnifiedPush.registerApp()` after settings are saved and on app start
+- [x] `SettingsRepository`: persist push endpoint URL in `EncryptedSharedPreferences`
+- [x] `SettingsScreen`: add UnifiedPush status row (active distributor name, or
       "no distributor — using periodic sync" if none is installed)
-- [ ] `SyncTrigger.PUSH` is already defined — wire it up in `SyncWorker.enqueueSyncNow`
+- [x] `SyncTrigger.PUSH` is already defined — wired up in `SyncWorker.enqueueSyncNow`
       call from `PushReceiver.onMessage`
-- [ ] Schedule a `PeriodicWorkRequest` (3-day interval, `CHARGING + CONNECTED` constraints)
+- [x] Schedule a `PeriodicWorkRequest` (3-day interval, `CHARGING + CONNECTED` constraints)
       that re-POSTs the stored endpoint URL to bump `last_seen_at` on the server
 
 ---

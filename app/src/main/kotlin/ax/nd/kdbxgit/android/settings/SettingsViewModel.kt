@@ -3,8 +3,10 @@ package ax.nd.kdbxgit.android.settings
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import ax.nd.kdbxgit.android.KdbxGitApplication
+import ax.nd.kdbxgit.android.push.PushRegistrationWorker
 import ax.nd.kdbxgit.android.sync.SyncWorker
 import kotlinx.coroutines.flow.StateFlow
+import org.unifiedpush.android.connector.UnifiedPush
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -12,6 +14,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val syncRepository = (application as KdbxGitApplication).syncRepository
 
     val serverConfig: StateFlow<ServerConfig?> = repository.serverConfig
+    val pushEndpoint: StateFlow<String?> = repository.pushEndpoint
 
     fun save(
         serverUrl: String,
@@ -30,6 +33,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             prev.clientId  != trimmedClientId
         if (endpointChanged) {
             syncRepository.clearLocalData()
+            // Clear the stored endpoint; onNewEndpoint from registerApp() below will
+            // re-populate it and register with the new server.
+            repository.clearPushEndpoint()
         }
 
         repository.save(
@@ -39,5 +45,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             customCaCertPem = customCaCertPem?.trim()?.takeIf { it.isNotBlank() },
         )
         SyncWorker.schedulePeriodicSync(getApplication())
+
+        // (Re-)register with the UP distributor. If a distributor is installed this
+        // triggers onNewEndpoint → PushRegistrationWorker, registering the endpoint
+        // with the (possibly new) server. If no distributor is installed this is a no-op.
+        UnifiedPush.registerApp(getApplication())
+        PushRegistrationWorker.schedulePeriodicRefresh(getApplication())
     }
 }

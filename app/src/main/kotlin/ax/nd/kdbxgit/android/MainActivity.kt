@@ -48,6 +48,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import ax.nd.kdbxgit.android.push.PushRegistrationWorker
 import ax.nd.kdbxgit.android.settings.SettingsScreen
 import ax.nd.kdbxgit.android.sync.SyncLogEntry
 import ax.nd.kdbxgit.android.sync.SyncOutcome
@@ -55,6 +56,7 @@ import ax.nd.kdbxgit.android.sync.SyncStatus
 import ax.nd.kdbxgit.android.sync.SyncType
 import ax.nd.kdbxgit.android.sync.SyncWorker
 import ax.nd.kdbxgit.android.ui.theme.KdbxGitTheme
+import org.unifiedpush.android.connector.UnifiedPush
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,6 +77,8 @@ class MainActivity : ComponentActivity() {
         val app = application as KdbxGitApplication
         if (app.settingsRepository.serverConfig.value != null) {
             SyncWorker.schedulePeriodicSync(this)
+            UnifiedPush.registerApp(this)
+            PushRegistrationWorker.schedulePeriodicRefresh(this)
         }
     }
 }
