@@ -77,9 +77,9 @@ Push endpoint URLs are stored in a new table/collection in the server's existing
 
 ```
 push_endpoints {
-    client_id   TEXT  PRIMARY KEY   -- same as WebDAV client_id
-    endpoint    TEXT  NOT NULL      -- UP endpoint URL (HTTPS)
-    registered_at TIMESTAMP         -- for auditing / expiry (future)
+    client_id    TEXT       PRIMARY KEY   -- same as WebDAV client_id
+    endpoint     TEXT       NOT NULL      -- UP endpoint URL (HTTPS)
+    last_seen_at TIMESTAMP  NOT NULL      -- updated on every POST (register or refresh)
 }
 ```
 
@@ -88,7 +88,9 @@ push_endpoints {
 After every commit to `main` (i.e. after any `PUT /dav/{id}/database.kdbx` that results
 in a new git commit), the server:
 
-1. Loads all rows from `push_endpoints`.
+1. Loads all rows from `push_endpoints` where `last_seen_at > now() - 14 days`.
+   Endpoints outside that window are skipped for delivery but not yet deleted (see Expiry
+   below).
 2. For each endpoint URL, sends:
 
 ```
@@ -102,8 +104,20 @@ Content-Type: application/json
    best-effort. Clients that miss a push will catch up via periodic sync.
 4. Delivery is fire-and-forget; it must not block the HTTP response to the uploading
    client or delay the git commit. Run deliveries in a background goroutine/task.
-5. Stale endpoints (e.g. 404 / 410 responses from the push provider) are deleted from
-   `push_endpoints` automatically to avoid accumulating dead registrations.
+5. Endpoints that return 404 or 410 from the push provider are deleted from
+   `push_endpoints` immediately — these indicate the endpoint has been permanently revoked.
+
+### Endpoint expiry
+
+The server runs a periodic cleanup (e.g. daily) that hard-deletes rows from
+`push_endpoints` where `last_seen_at < now() - 14 days`. This keeps the table tidy and
+ensures that endpoints belonging to uninstalled apps or decommissioned devices are
+eventually purged.
+
+The 14-day TTL pairs with the client's 3-day refresh schedule (see Android client design
+below): a healthy client refreshes roughly every 3 days, so 14 days gives more than four
+missed refresh cycles before expiry — enough headroom for a device that's offline for an
+extended period or simply not charging.
 
 ### Notification payload
 
@@ -215,6 +229,35 @@ PushRegistrationWorker → DELETE /push/{id}/endpoint
 `registerApp` is also called after a successful settings save (URL, client ID, or password
 change), which triggers `onNewEndpoint` again and re-registers with the new credentials.
 
+### Periodic endpoint refresh
+
+To keep the server's `last_seen_at` current and prevent expiry, the app re-POSTs its
+stored endpoint URL to the server every **3 days**, but only while the device is charging.
+This is implemented as a `PeriodicWorkRequest` with a 3-day repeat interval and a
+`CHARGING` constraint:
+
+```kotlin
+PeriodicWorkRequestBuilder<PushRegistrationWorker>(3, TimeUnit.DAYS)
+    .setConstraints(
+        Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresCharging(true)
+            .build()
+    )
+    .setInputData(workDataOf(KEY_ACTION to ACTION_REGISTER))
+    .build()
+```
+
+The `CHARGING` constraint means the refresh only runs opportunistically (no battery cost
+to the user) while still providing enough refresh cycles to stay well within the 14-day
+server TTL. If the device hasn't charged for an unusually long time the endpoint may
+expire, but the app re-registers automatically on the next settings-configured startup.
+
+The refresh worker reuses the `endpoint` URL already stored in `EncryptedSharedPreferences`
+by `PushReceiver.onNewEndpoint` — it does not call `UnifiedPush.registerApp()` again
+(which would be a full UP re-registration). It simply re-POSTs the existing URL to bump
+`last_seen_at` on the server.
+
 ### Settings UI additions
 
 In `SettingsScreen`:
@@ -289,9 +332,6 @@ dominated by the push provider delivery time.
 
 ## Open Questions
 
-- **Endpoint expiry**: Should the server proactively expire push endpoints that have not
-  been refreshed in N days (e.g. 30)? The client re-registers on every app start when
-  settings are configured, so drift should be minimal.
 - **Per-client vs. broadcast push**: Currently the design pushes to *all* registered
   clients when *any* client commits. An optimisation would be to skip the pushing client
   (it already has the latest data), but the resulting no-op sync is cheap enough that this

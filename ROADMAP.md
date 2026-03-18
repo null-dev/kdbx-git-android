@@ -379,12 +379,13 @@ collected in the ViewModel, so new entries appear automatically.
 See `INSTANT_SYNC.md` for the full design.
 
 **Server changes (kdbx-git server repo):**
-- [ ] Add `push_endpoints` table/collection to server database
-- [ ] Implement `POST /push/{client_id}/endpoint` — register / replace endpoint URL
+- [ ] Add `push_endpoints` table to server database (`client_id`, `endpoint`, `last_seen_at`)
+- [ ] Implement `POST /push/{client_id}/endpoint` — register / replace endpoint, update `last_seen_at`
 - [ ] Implement `DELETE /push/{client_id}/endpoint` — unregister endpoint (idempotent)
 - [ ] After every successful `main` commit: deliver `{"event":"branch-updated"}` to all
-      registered endpoints in a background task (fire-and-forget, 5 s timeout)
-- [ ] Auto-delete stale endpoints on 404/410 responses from the push provider
+      endpoints where `last_seen_at > now() - 14 days`, in a background task (fire-and-forget, 5 s timeout)
+- [ ] Auto-delete endpoints that return 404/410 from the push provider
+- [ ] Periodic cleanup job: hard-delete rows where `last_seen_at < now() - 14 days`
 
 **Android client changes:**
 - [ ] Add `com.github.UnifiedPush:android-connector` dependency
@@ -400,6 +401,8 @@ See `INSTANT_SYNC.md` for the full design.
       "no distributor — using periodic sync" if none is installed)
 - [ ] `SyncTrigger.PUSH` is already defined — wire it up in `SyncWorker.enqueueSyncNow`
       call from `PushReceiver.onMessage`
+- [ ] Schedule a `PeriodicWorkRequest` (3-day interval, `CHARGING + CONNECTED` constraints)
+      that re-POSTs the stored endpoint URL to bump `last_seen_at` on the server
 
 ---
 
