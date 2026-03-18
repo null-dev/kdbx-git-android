@@ -11,6 +11,7 @@ okhttp            = "4.12.0"
 workmanager       = "2.10.0"
 securityCrypto    = "1.1.0-alpha06"
 navigationCompose = "2.8.4"
+coroutines     = "1.8.1"
 junit          = "4.13.2"
 junitExt       = "1.2.1"
 espressoCore   = "3.6.1"
@@ -36,6 +37,9 @@ workmanager-ktx               = { group = "androidx.work",            name = "wo
 androidx-security-crypto      = { group = "androidx.security",        name = "security-crypto",             version.ref = "securityCrypto" }
 androidx-navigation-compose   = { group = "androidx.navigation",      name = "navigation-compose",          version.ref = "navigationCompose" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
+kotlinx-coroutines-android    = { group = "org.jetbrains.kotlinx",   name = "kotlinx-coroutines-android",  version.ref = "coroutines" }
+kotlinx-coroutines-test       = { group = "org.jetbrains.kotlinx",   name = "kotlinx-coroutines-test",     version.ref = "coroutines" }
+mockwebserver                 = { group = "com.squareup.okhttp3",     name = "mockwebserver",               version.ref = "okhttp" }
 junit                         = { group = "junit",                    name = "junit",                       version.ref = "junit" }
 androidx-junit                = { group = "androidx.test.ext",        name = "junit",                       version.ref = "junitExt" }
 androidx-espresso-core        = { group = "androidx.test.espresso",   name = "espresso-core",               version.ref = "espressoCore" }

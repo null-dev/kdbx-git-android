@@ -297,13 +297,13 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] `SettingsRepository` backed by `EncryptedSharedPreferences`
 - [x] Basic app icon and manifest
 
-### Phase 2 — WebDAV client
+### Phase 2 — WebDAV client ✓
 
-- [ ] `WebDavClient`: `suspend fun pull(): ByteArray` (GET)
-- [ ] `WebDavClient`: `suspend fun push(bytes: ByteArray)` (PUT)
-- [ ] HTTP Basic Auth interceptor
-- [ ] SHA-256 hash utility
-- [ ] Unit tests with MockWebServer
+- [x] `WebDavClient`: `suspend fun pull(): ByteArray` (GET)
+- [x] `WebDavClient`: `suspend fun push(bytes: ByteArray)` (PUT)
+- [x] HTTP Basic Auth interceptor
+- [x] SHA-256 hash utility
+- [x] Unit tests with MockWebServer
 
 ### Phase 3 — Local storage & sync state
 
