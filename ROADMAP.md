@@ -15,7 +15,9 @@ server.
 |---|---|
 | `GET /dav/{client_id}/database.kdbx` | Download current merged KDBX for this client |
 | `PUT /dav/{client_id}/database.kdbx` | Upload a modified KDBX; server merges it into `main` |
-| `GET /sync/{client_id}/events` | SSE stream; fires `branch-updated` when `main` advances — **not currently used, see server push below** |
+| `GET /sync/{client_id}/events` | SSE stream; fires `branch-updated` when `main` advances — **not used, see UnifiedPush below** |
+| `POST /push/{client_id}/endpoint` | Register or update a UnifiedPush endpoint URL for this client |
+| `DELETE /push/{client_id}/endpoint` | Unregister the push endpoint for this client |
 
 Wire format: raw, encrypted KDBX 4.x bytes. Auth: HTTP Basic (username = client ID, password = configured password).
 
@@ -372,6 +374,33 @@ collected in the ViewModel, so new entries appear automatically.
 - [ ] KeePassDX compatibility verification (open via content URI, save back)
 - [ ] Battery / wake-lock audit
 
+### Phase 11 — UnifiedPush instant sync
+
+See `INSTANT_SYNC.md` for the full design.
+
+**Server changes (kdbx-git server repo):**
+- [ ] Add `push_endpoints` table/collection to server database
+- [ ] Implement `POST /push/{client_id}/endpoint` — register / replace endpoint URL
+- [ ] Implement `DELETE /push/{client_id}/endpoint` — unregister endpoint (idempotent)
+- [ ] After every successful `main` commit: deliver `{"event":"branch-updated"}` to all
+      registered endpoints in a background task (fire-and-forget, 5 s timeout)
+- [ ] Auto-delete stale endpoints on 404/410 responses from the push provider
+
+**Android client changes:**
+- [ ] Add `com.github.UnifiedPush:android-connector` dependency
+- [ ] Add `WebDavClient` methods: `registerPushEndpoint(url)` / `deletePushEndpoint()`
+- [ ] Implement `PushReceiver : MessagingReceiver` — `onNewEndpoint`, `onMessage`,
+      `onUnregistered`; declare in manifest with UP intent filter
+- [ ] Implement `PushRegistrationWorker` — retryable `CoroutineWorker` that POSTs/DELETEs
+      the endpoint to the server
+- [ ] Call `UnifiedPush.registerApp()` after settings are saved and on app start
+- [ ] Call `UnifiedPush.unregisterApp()` on credential wipe / logout
+- [ ] `SettingsRepository`: persist push endpoint URL in `EncryptedSharedPreferences`
+- [ ] `SettingsScreen`: add UnifiedPush status row (active distributor name, or
+      "no distributor — using periodic sync" if none is installed)
+- [ ] `SyncTrigger.PUSH` is already defined — wire it up in `SyncWorker.enqueueSyncNow`
+      call from `PushReceiver.onMessage`
+
 ---
 
 ## Resolved Design Decisions
@@ -402,20 +431,21 @@ database per deployment, so there is nothing to map to on the client side.
 
 ---
 
-## Server Push (Future Work)
+## Server Push
 
 The kdbx-git server exposes an SSE endpoint (`GET /sync/{id}/events`) that fires a
 `branch-updated` event whenever `main` advances. Using SSE for reactive sync would require
 keeping a persistent HTTP connection open at all times, which drains battery unacceptably
 on mobile.
 
-The planned alternative is **UnifiedPush**: an open push-notification standard that
-delivers lightweight wakeup messages through a separate push provider (e.g. Ntfy,
-Gotify). This requires server-side support that does not exist yet. When the kdbx-git
-server gains UnifiedPush support, the Android app will register a receiver that triggers a
-sync on receipt of a push message — no persistent connection needed.
+The chosen alternative is **UnifiedPush** — see `INSTANT_SYNC.md` for the full design.
+The server will gain two new endpoints (`POST/DELETE /push/{id}/endpoint`) for push
+endpoint registration, and will deliver a lightweight `{"event":"branch-updated"}` payload
+to all registered endpoints after every commit. The Android app will implement a
+`MessagingReceiver` that responds by enqueuing an expedited `SyncWorker(PUSH)` — no
+persistent connection needed.
 
-Until then, sync is driven by:
+Until UnifiedPush is implemented, sync is driven by:
 1. **Write-triggered push** — expedited `SyncWorker` enqueued immediately after a local write
 2. **Periodic WorkManager job** — `PeriodicWorkRequest` with `NetworkType.CONNECTED`; runs at most every 15 min and is automatically deferred and re-run when connectivity is restored (covers the offline → online case)
 3. **Manual trigger** — expedited `SyncWorker` enqueued from the UI "Sync now" button
