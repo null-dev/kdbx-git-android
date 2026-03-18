@@ -256,13 +256,17 @@ collected in the ViewModel, so new entries appear automatically.
 │  (read/write gated via  │    access only via system picker
 │   ReadWriteLock)        │
 └──────────┬──────────────┘
-           │ file write → dirty flag
+           │ write → enqueue expedited SyncWorker(WRITE)
 ┌──────────▼──────────────┐
-│  SyncService            │  ← Foreground service
-│  (coroutine-based)      │
-│  - ConnectivityCallback │
-│  - Periodic WorkManager │
-│  - (UnifiedPush, later) │
+│  WorkManager            │  ← All sync scheduling
+│  PeriodicWorkRequest    │    NetworkType.CONNECTED constraint
+│  OneTimeWorkRequest     │    Doze-safe, battery-efficient
+│  (UnifiedPush, later)   │    no persistent process needed
+└──────────┬──────────────┘
+           │ SyncWorker.setForeground() → brief notification
+           │ only while actively syncing; silent when idle
+┌──────────▼──────────────┐
+│  SyncRepository.sync()  │  ← Core sync logic (all 4 scenarios)
 └──────────┬──────────────┘
            │ HTTP Basic + raw KDBX bytes
 ┌──────────▼──────────────┐
@@ -278,9 +282,8 @@ collected in the ViewModel, so new entries appear automatically.
 |---|---|
 | `KdbxDocumentsProvider` | SAF DocumentsProvider; file access, observer notifications, picker integration |
 | `SyncRepository` | Owns `last_synced_hash`, `local_dirty`, sync logic; writes `SyncLogEntry` on each attempt |
-| `SyncService` | Foreground service; owns connectivity callback and coroutine scope |
 | `WebDavClient` | OkHttp-based GET/PUT with Basic Auth |
-| `SyncWorker` | WorkManager `CoroutineWorker` for periodic background sync |
+| `SyncWorker` | WorkManager `CoroutineWorker`; runs all sync triggers (WRITE, MANUAL, PERIODIC, CONNECTIVITY); calls `setForeground()` to show a brief notification only while actively syncing |
 | `SyncLogEntry` / `SyncLogDao` | Room entity + DAO; capped at 200 entries |
 | `MainViewModel` | Exposes `Flow<List<SyncLogEntry>>` and `syncStatus` to `MainActivity`; delegates manual sync to `SyncRepository` |
 | `SettingsRepository` | Stores server URL, client ID, username, password (EncryptedSharedPreferences) |
@@ -322,19 +325,26 @@ collected in the ViewModel, so new entries appear automatically.
 - [x] `ReadWriteLock` guarding file access
 - [x] `notifyChange` after successful pulls
 
-### Phase 5 — Sync service ✓
+### Phase 5 — Sync service (revised, see Phase 6)
 
-- [x] `SyncService` as a started foreground service with persistent notification
-- [x] `ConnectivityManager.NetworkCallback` → trigger sync on network restore
-- [x] Wire `SyncService` start/stop to app lifecycle and settings changes
-- [x] _(UnifiedPush integration deferred — see server push note below)_
+> **Design change:** The original plan called for a persistent foreground service with a
+> permanent notification and a live `ConnectivityManager.NetworkCallback`. This was dropped
+> in favour of a WorkManager-only approach (see Phase 6): no process kept alive when idle,
+> no permanent notification, Doze-safe. WorkManager's `NetworkType.CONNECTED` constraint
+> replaces the connectivity callback; `SyncWorker.setForeground()` shows a brief
+> notification only during active sync.
 
-### Phase 6 — WorkManager background sync
+- [x] `SyncService` skeleton and manifest declarations
+- [ ] ~~Persistent foreground service with `ConnectivityManager.NetworkCallback`~~ — removed; see Phase 6
 
-- [ ] `SyncWorker` (CoroutineWorker) calling `SyncRepository.sync()`
-- [ ] Periodic request with `PeriodicWorkRequest` (configurable, default 15 min)
-- [ ] Constraint: `NetworkType.CONNECTED`
-- [ ] Cancel/reschedule when settings change
+### Phase 6 — WorkManager sync (primary sync driver)
+
+- [ ] `SyncWorker` (`CoroutineWorker`) calling `SyncRepository.sync(trigger)`
+- [ ] `setForeground(ForegroundInfo)` — show "Syncing…" notification only during active work
+- [ ] `PeriodicWorkRequest` (default 15 min, `NetworkType.CONNECTED`) — covers periodic and connectivity-restore triggers
+- [ ] Expedited `OneTimeWorkRequest` for `WRITE` and `MANUAL` triggers
+- [ ] Remove `SyncService`; update `KdbxDocumentsProvider`, `BootReceiver`, `MainActivity`, and `SettingsViewModel` to enqueue WorkManager instead
+- [ ] Cancel/reschedule `PeriodicWorkRequest` when settings change
 
 ### Phase 7 — Main UI, manual sync & sync log
 
@@ -343,7 +353,6 @@ collected in the ViewModel, so new entries appear automatically.
 - [ ] `SyncLogEntry` Room entity and DAO (see Sync Log design below)
 - [ ] `SyncLogAdapter` + `RecyclerView` displaying the rolling sync log
 - [ ] `SyncRepository` writes a `SyncLogEntry` at the end of every sync attempt
-- [ ] Persistent notification showing sync status (Idle / Syncing / Error) with a "Sync now" action
 
 ### Phase 8 — Error handling
 
@@ -380,6 +389,14 @@ deliberate long-term choice, not just a deferral.
 config's `keyfile` option is for server operators who want extra protection on the git
 store, not something that changes per-sync. There is nothing to sync.
 
+**No persistent foreground service** — A permanent foreground service (always-alive process,
+permanent notification) was initially planned to own a `ConnectivityManager.NetworkCallback`
+and a coroutine scope. This was dropped: a registered callback has negligible battery cost
+when idle, but a permanent notification is poor UX and keeping the process alive is
+unnecessary. WorkManager's `NetworkType.CONNECTED` constraint handles connectivity-triggered
+sync; `SyncWorker.setForeground()` shows a brief notification only while actively syncing.
+The result is zero idle overhead and no permanent notification.
+
 **Multiple databases** — Out of scope. The kdbx-git server itself supports only one
 database per deployment, so there is nothing to map to on the client side.
 
@@ -399,6 +416,6 @@ server gains UnifiedPush support, the Android app will register a receiver that 
 sync on receipt of a push message — no persistent connection needed.
 
 Until then, sync is driven by:
-1. **Write-triggered push** — immediate sync after a local database write
-2. **ConnectivityCallback** — sync on network reconnection after offline period
-3. **Periodic WorkManager job** — backstop poll (default every 15 min)
+1. **Write-triggered push** — expedited `SyncWorker` enqueued immediately after a local write
+2. **Periodic WorkManager job** — `PeriodicWorkRequest` with `NetworkType.CONNECTED`; runs at most every 15 min and is automatically deferred and re-run when connectivity is restored (covers the offline → online case)
+3. **Manual trigger** — expedited `SyncWorker` enqueued from the UI "Sync now" button
