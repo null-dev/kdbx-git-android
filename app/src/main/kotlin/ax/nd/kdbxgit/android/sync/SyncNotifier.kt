@@ -10,15 +10,7 @@ import ax.nd.kdbxgit.android.MainActivity
 import ax.nd.kdbxgit.android.R
 
 /**
- * Posts user-visible notifications for sync error conditions and server-side merges.
- *
- * Notifications shown:
- *  - **Repeated failure**: after [FAILURE_THRESHOLD] consecutive sync failures a persistent
- *    error notification is shown with the last error message. It is cleared automatically on
- *    the next successful sync.
- *  - **Merge**: when the server returns a database that differs from the locally uploaded
- *    version (i.e. the server performed a KeePass merge), a one-shot "changes merged"
- *    notification is posted.
+ * Posts user-visible notifications for repeated sync failures.
  */
 class SyncNotifier(private val context: Context) {
 
@@ -30,18 +22,6 @@ class SyncNotifier(private val context: Context) {
 
     fun onSuccess() {
         nm.cancel(NOTIFICATION_ID_ERROR)
-    }
-
-    fun onMerge() {
-        val openIntent = openAppIntent()
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("KDBX Git — Changes merged")
-            .setContentText("Remote changes were merged into your database.")
-            .setContentIntent(openIntent)
-            .setAutoCancel(true)
-            .build()
-        nm.notify(NOTIFICATION_ID_MERGE, notification)
     }
 
     fun onFailure(consecutiveCount: Int, errorMessage: String) {
@@ -73,7 +53,7 @@ class SyncNotifier(private val context: Context) {
             "Sync Alerts",
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "Alerts for repeated sync failures and database merges"
+            description = "Alerts for repeated sync failures"
             setShowBadge(true)
         }
         nm.createNotificationChannel(channel)
@@ -82,7 +62,6 @@ class SyncNotifier(private val context: Context) {
     companion object {
         const val CHANNEL_ID            = "kdbx_git_sync_alerts"
         private const val NOTIFICATION_ID_ERROR = 2
-        private const val NOTIFICATION_ID_MERGE = 3
         const val FAILURE_THRESHOLD     = 3
     }
 }

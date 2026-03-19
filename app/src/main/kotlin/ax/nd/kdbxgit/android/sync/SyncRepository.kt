@@ -131,7 +131,6 @@ class SyncRepository(
 
                     val outcome = if (isMerged) SyncOutcome.MERGED else SyncOutcome.SUCCESS
                     log(trigger, SyncType.PUSH_PULL, outcome, bytesDown, bytesUp, startMs)
-                    if (isMerged) notifier.onMerge()
                 }
 
                 consecutiveFailures = 0
