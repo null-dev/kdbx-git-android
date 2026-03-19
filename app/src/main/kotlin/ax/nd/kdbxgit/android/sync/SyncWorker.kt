@@ -50,7 +50,12 @@ class SyncWorker(
         val trigger = runCatching { SyncTrigger.valueOf(triggerName) }
             .getOrDefault(SyncTrigger.MANUAL)
 
-        setForeground(buildForegroundInfo())
+        // Push-triggered syncs run in the background (started from a BroadcastReceiver); Android
+        // forbids starting foreground services in that state, so we skip setForeground() and run
+        // silently. User-initiated and write-triggered syncs show the "Syncing…" notification.
+        if (trigger != SyncTrigger.PUSH) {
+            setForeground(buildForegroundInfo())
+        }
         syncRepository.sync(trigger)
         return Result.success()
     }
