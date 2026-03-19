@@ -94,8 +94,7 @@ Response:
 - Required by the embedded FCM distributor: it uses the VAPID key to authenticate push
   messages with Google's FCM infrastructure.
 - The client fetches this key before calling `UnifiedPush.register(vapid = key)`.
-- External UP distributors (ntfy, Gotify-UP, etc.) do not require a VAPID key; the
-  client passes `null` for those.
+- If fetching the key fails, the app skips registration.
 
 ### Persistence
 
@@ -315,8 +314,8 @@ PushReceiver.onUnregistered()
 PushRegistrationWorker → DELETE /push/{id}/endpoint
 ```
 
-The VAPID key is passed to `register()` unconditionally — external distributors silently
-ignore it, and the embedded FCM distributor requires it.
+The VAPID key is passed to `register()` unconditionally. If fetching it fails, the app
+skips UnifiedPush registration.
 
 ### Periodic endpoint refresh
 

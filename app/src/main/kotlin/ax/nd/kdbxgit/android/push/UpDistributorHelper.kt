@@ -18,21 +18,24 @@ private val logger = KotlinLogging.logger {}
  * [getDistributors], which scans for `ACTION_REGISTER` broadcast receivers and therefore
  * finds the embedded distributor, then save the first one found and register.
  *
- * The VAPID public key is fetched from the server before registering; the embedded FCM
- * distributor requires it and will reject registrations without one.
+ * The VAPID public key is fetched from the server before registering. The embedded FCM
+ * distributor requires it, and the app skips UP registration if the fetch fails.
  */
 suspend fun registerUpDistributor(context: Context) {
     val config = (context.applicationContext as KdbxGitApplication).settingsRepository.serverConfig.value
-    val vapid = if (config != null) {
-        try {
-            val key = WebDavClient(config).fetchVapidPublicKey()
-            logger.info { "Fetched VAPID public key from server" }
-            key
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to fetch VAPID key — registering without it" }
-            null
-        }
-    } else null
+    if (config == null) {
+        logger.info { "Skipping UP registration: no server config saved yet" }
+        return
+    }
+
+    val vapid = try {
+        val key = WebDavClient(config).fetchVapidPublicKey()
+        logger.info { "Fetched VAPID public key from server" }
+        key
+    } catch (e: Exception) {
+        logger.warn(e) { "Failed to fetch VAPID key — skipping push registration" }
+        return
+    }
 
     UnifiedPush.tryUseCurrentOrDefaultDistributor(context) { success ->
         if (success) {
