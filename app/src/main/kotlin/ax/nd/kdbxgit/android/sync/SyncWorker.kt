@@ -34,8 +34,8 @@ import java.util.concurrent.TimeUnit
  *  - **Periodic** work (≥ 15 min, [NetworkType.CONNECTED]) for [SyncTrigger.PERIODIC] —
  *    provides a backstop poll and automatically retries after network restoration.
  *
- * [setForeground] is called at the start of [doWork] so a brief "Syncing…" notification
- * is shown only while the worker is actively running — no permanent notification.
+ * Manual syncs call [setForeground] so a brief "Syncing…" notification is shown while the
+ * worker is actively running. Background-triggered syncs run silently.
  */
 class SyncWorker(
     private val appContext: Context,
@@ -50,10 +50,10 @@ class SyncWorker(
         val trigger = runCatching { SyncTrigger.valueOf(triggerName) }
             .getOrDefault(SyncTrigger.MANUAL)
 
-        // Push-triggered syncs run in the background (started from a BroadcastReceiver); Android
-        // forbids starting foreground services in that state, so we skip setForeground() and run
-        // silently. User-initiated and write-triggered syncs show the "Syncing…" notification.
-        if (trigger != SyncTrigger.PUSH) {
+        // Only explicit in-app manual syncs should request foreground execution. Other triggers
+        // can fire while the app is backgrounded, where Android may reject foreground-service
+        // startup.
+        if (trigger == SyncTrigger.MANUAL) {
             setForeground(buildForegroundInfo())
         }
         syncRepository.sync(trigger)
