@@ -90,7 +90,14 @@ class SyncRepository(
             var bytesUp = 0L
 
             try {
-                if (!localDirty || !dbFile.exists()) {
+                val dirtyAtStart = localDirty
+                val localBytes = if (dbFile.exists()) dbFile.readBytes() else null
+                val localHash = localBytes?.sha256Hex()
+                val confirmedHash = lastSyncedHash
+                val hasLocalChange = dirtyAtStart && localBytes != null && localHash != confirmedHash
+                val staleDirty = dirtyAtStart && !hasLocalChange
+
+                if (!hasLocalChange) {
                     // ── Clean path: check whether remote has advanced ────────────
                     _syncStatus.value = SyncStatus.Pulling
                     val remoteBytes = client.pull()
@@ -106,10 +113,16 @@ class SyncRepository(
                         log(trigger, SyncType.PULL, SyncOutcome.NO_CHANGE, 0L, 0L, startMs)
                     }
 
+                    val currentHash = if (dbFile.exists()) dbFile.readBytes().sha256Hex() else null
+                    if (staleDirty && currentHash == remoteHash) {
+                        // A writable SAF open can close without changing bytes. Treat that stale
+                        // dirty flag as clean so we do not create empty "write from client" commits.
+                        prefs.edit().putBoolean(KEY_LOCAL_DIRTY, false).apply()
+                    }
+
                 } else {
                     // ── Dirty path: push → pull ──────────────────────────────────
                     _syncStatus.value = SyncStatus.Pushing
-                    val localBytes = dbFile.readBytes()
                     client.push(localBytes)
                     bytesUp = localBytes.size.toLong()
                     // If push succeeds but the following pull throws, local_dirty stays
@@ -120,7 +133,7 @@ class SyncRepository(
                     bytesDown = remoteBytes.size.toLong()
                     val remoteHash = remoteBytes.sha256Hex()
 
-                    val isMerged = remoteHash != localBytes.sha256Hex()
+                    val isMerged = remoteHash != localHash
 
                     writeAtomically(remoteBytes)
                     prefs.edit()

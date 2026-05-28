@@ -15,6 +15,7 @@ import ax.nd.kdbxgit.android.R
 import ax.nd.kdbxgit.android.sync.SyncRepository
 import ax.nd.kdbxgit.android.sync.SyncTrigger
 import ax.nd.kdbxgit.android.sync.SyncWorker
+import ax.nd.kdbxgit.android.sync.sha256Hex
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -140,10 +141,12 @@ class KdbxDocumentsProvider : DocumentsProvider() {
         // can do random-access read+write freely. On close, the staging file is committed
         // atomically and a WRITE-triggered sync is enqueued.
         val staging = File(context!!.cacheDir, "staged_${System.nanoTime()}.kdbx")
+        val baseHash: String
         lock.readLock().lock()
         try {
             if (dbFile.exists()) dbFile.copyTo(staging, overwrite = true)
             else staging.createNewFile()
+            baseHash = staging.readBytes().sha256Hex()
         } finally {
             lock.readLock().unlock()
         }
@@ -153,7 +156,7 @@ class KdbxDocumentsProvider : DocumentsProvider() {
             ParcelFileDescriptor.MODE_READ_WRITE,
             handler,
         ) { error ->
-            if (error == null) commitStaging(staging) else staging.delete()
+            if (error == null) commitStaging(staging, baseHash) else staging.delete()
         }
     }
 
@@ -161,14 +164,20 @@ class KdbxDocumentsProvider : DocumentsProvider() {
 
     /**
      * Called on the [handler] thread when the client closes its write FD cleanly.
-     * Atomically replaces the live database, marks it dirty, notifies observers,
-     * and enqueues a sync.
+     * If bytes changed from the snapshot opened by the caller, atomically replaces
+     * the live database, marks it dirty, notifies observers, and enqueues a sync.
      */
-    private fun commitStaging(staging: File) {
+    private fun commitStaging(staging: File, baseHash: String) {
         val dbFile = syncRepository.dbFile
 
         lock.writeLock().lock()
         try {
+            val changed = stagedDatabaseChangedFromBase(staging, baseHash)
+            if (!changed) {
+                staging.delete()
+                return
+            }
+
             if (!staging.renameTo(dbFile)) {
                 // Cross-filesystem rename would fail — shouldn't happen (both paths are
                 // on internal storage) but handle it safely.

@@ -25,7 +25,6 @@ class WebDavClientTest {
             ServerConfig(
                 serverUrl = server.url("/").toString().trimEnd('/'),
                 clientId  = "test-client",
-                username  = "alice",
                 password  = "s3cr3t",
             )
         )
@@ -66,7 +65,7 @@ class WebDavClientTest {
         client.pull()
 
         val authHeader = server.takeRequest().getHeader("Authorization")
-        assertEquals(Credentials.basic("alice", "s3cr3t"), authHeader)
+        assertEquals(Credentials.basic("test-client", "s3cr3t"), authHeader)
     }
 
     @Test(expected = WebDavException::class)
@@ -125,7 +124,7 @@ class WebDavClientTest {
         client.push(byteArrayOf(0x00))
 
         val authHeader = server.takeRequest().getHeader("Authorization")
-        assertEquals(Credentials.basic("alice", "s3cr3t"), authHeader)
+        assertEquals(Credentials.basic("test-client", "s3cr3t"), authHeader)
     }
 
     @Test(expected = WebDavException::class)
@@ -148,7 +147,6 @@ class WebDavClientTest {
             ServerConfig(
                 serverUrl = server.url("/").toString(), // has trailing slash
                 clientId  = "test-client",
-                username  = "alice",
                 password  = "s3cr3t",
             )
         )
