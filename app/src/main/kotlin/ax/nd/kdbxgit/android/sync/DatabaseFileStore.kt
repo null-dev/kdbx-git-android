@@ -2,6 +2,9 @@ package ax.nd.kdbxgit.android.sync
 
 import android.os.Handler
 import android.os.ParcelFileDescriptor
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -15,8 +18,8 @@ open class DatabaseFileStore(
     val dbFile: File = File(filesDir, "database.kdbx")
 
     private val lock = ReentrantReadWriteLock()
-    @Volatile
-    private var localChangeObserver: (() -> Unit)? = null
+    private val _localChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val localChanges: SharedFlow<Unit> = _localChanges.asSharedFlow()
 
     data class Metadata(
         val exists: Boolean,
@@ -79,10 +82,6 @@ open class DatabaseFileStore(
         } finally {
             lock.writeLock().unlock()
         }
-    }
-
-    fun setLocalChangeObserver(observer: (() -> Unit)?) {
-        localChangeObserver = observer
     }
 
     open fun replaceWith(bytes: ByteArray) {
@@ -191,7 +190,7 @@ open class DatabaseFileStore(
             lock.writeLock().unlock()
         }
         if (changed) {
-            localChangeObserver?.invoke()
+            _localChanges.tryEmit(Unit)
         }
         return changed
     }

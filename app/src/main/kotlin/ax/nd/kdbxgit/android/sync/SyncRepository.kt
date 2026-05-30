@@ -5,9 +5,13 @@ import android.provider.DocumentsContract
 import ax.nd.kdbxgit.android.DatabaseDocumentContract
 import ax.nd.kdbxgit.android.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -17,6 +21,7 @@ class SyncRepository(
     private val settingsRepository: SettingsRepository,
     private val syncLogDao: SyncLogDao,
     private val fileStore: DatabaseFileStore,
+    private val observerScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val notifier = SyncNotifier(context)
     private val stateStore = SharedPreferencesSyncStateStore.from(context)
@@ -41,9 +46,11 @@ class SyncRepository(
     val syncMutex = Mutex()
 
     init {
-        fileStore.setLocalChangeObserver {
-            notifyFileChanged()
-            SyncWorker.enqueueSyncNow(context, SyncTrigger.WRITE)
+        observerScope.launch {
+            fileStore.localChanges.collect {
+                notifyFileChanged()
+                SyncWorker.enqueueSyncNow(context, SyncTrigger.WRITE)
+            }
         }
     }
 

@@ -1,6 +1,12 @@
 package ax.nd.kdbxgit.android.sync
 
 import android.os.ParcelFileDescriptor
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +16,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.IOException
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class DatabaseFileStoreTest {
 
     @get:Rule
@@ -67,10 +74,10 @@ class DatabaseFileStoreTest {
     }
 
     @Test
-    fun `sync replacements do not notify local change observer`() {
+    fun `sync replacements do not emit local change events`() = runTest {
         val store = newStore()
-        var changeCount = 0
-        store.setLocalChangeObserver { changeCount++ }
+        val localChange = async { store.localChanges.first() }
+        runCurrent()
 
         store.replaceWith(byteArrayOf(1, 2, 3))
         val replaced = store.replaceWithIfCurrent(
@@ -79,7 +86,8 @@ class DatabaseFileStoreTest {
         )
 
         assertTrue(replaced)
-        assertEquals(0, changeCount)
+        assertFalse(localChange.isCompleted)
+        localChange.cancel()
     }
 
     @Test(expected = IOException::class)
@@ -131,24 +139,26 @@ class DatabaseFileStoreTest {
     }
 
     @Test
-    fun `changed staging commit notifies local change observer`() {
+    fun `changed staging commit emits local change event to multiple collectors`() = runTest {
         val store = newStore()
-        var changeCount = 0
-        store.setLocalChangeObserver { changeCount++ }
+        val firstCollector = async { store.localChanges.first() }
+        val secondCollector = async { store.localChanges.first() }
+        runCurrent()
         val staged = store.createStagingSnapshotForTest()
         staged.file.writeBytes(byteArrayOf(1))
 
         val changed = store.commitStagingForTest(staged)
 
         assertTrue(changed)
-        assertEquals(1, changeCount)
+        firstCollector.await()
+        secondCollector.await()
     }
 
     @Test
-    fun `unchanged staging commit does not notify local change observer`() {
+    fun `unchanged staging commit does not emit local change event`() = runTest {
         val store = newStore()
-        var changeCount = 0
-        store.setLocalChangeObserver { changeCount++ }
+        val localChange = async { store.localChanges.first() }
+        runCurrent()
         val bytes = byteArrayOf(1, 2, 3)
         store.replaceWith(bytes)
         val staged = store.createStagingSnapshotForTest()
@@ -156,7 +166,22 @@ class DatabaseFileStoreTest {
         val changed = store.commitStagingForTest(staged)
 
         assertFalse(changed)
-        assertEquals(0, changeCount)
+        assertFalse(localChange.isCompleted)
+        localChange.cancel()
+    }
+
+    @Test
+    fun `new collectors do not receive old local change events`() = runTest {
+        val store = newStore()
+        val staged = store.createStagingSnapshotForTest()
+        staged.file.writeBytes(byteArrayOf(1))
+        store.commitStagingForTest(staged)
+
+        val localChange = async { store.localChanges.drop(1).first() }
+        runCurrent()
+
+        assertFalse(localChange.isCompleted)
+        localChange.cancel()
     }
 
     @Test
