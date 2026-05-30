@@ -117,7 +117,7 @@ class KdbxDocumentsProvider : DocumentsProvider() {
             return fileStore.openForRead()
         }
 
-        return fileStore.openForWrite(handler) { changed ->
+        return fileStore.openForWrite(parsedMode, handler) { changed ->
             if (changed) {
                 syncRepository.markDirty()
                 context!!.contentResolver.notifyChange(docUri(), null)

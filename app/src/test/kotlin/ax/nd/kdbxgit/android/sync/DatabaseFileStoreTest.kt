@@ -1,5 +1,6 @@
 package ax.nd.kdbxgit.android.sync
 
+import android.os.ParcelFileDescriptor
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -77,6 +78,59 @@ class DatabaseFileStoreTest {
     }
 
     @Test
+    fun `truncate write staging starts empty even when live database has bytes`() {
+        val store = newStore()
+        store.replaceWith(byteArrayOf(1, 2, 3))
+
+        val staged = store.createStagingSnapshotForTest(
+            ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_TRUNCATE,
+        )
+
+        assertArrayEquals(byteArrayOf(), staged.file.readBytes())
+    }
+
+    @Test
+    fun `truncate write commit reports changed when live database had bytes`() {
+        val store = newStore()
+        store.replaceWith(byteArrayOf(1, 2, 3))
+        val staged = store.createStagingSnapshotForTest(
+            ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_TRUNCATE,
+        )
+
+        val changed = store.commitStagingForTest(staged)
+
+        assertTrue(changed)
+        assertArrayEquals(byteArrayOf(), store.dbFile.readBytes())
+        assertFalse(staged.file.exists())
+    }
+
+    @Test
+    fun `write-only parsed mode opens staging write-only`() {
+        val sanitizedMode = DatabaseFileStore.sanitizeWritableModeForTest(
+            ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_CREATE,
+        )
+
+        assertEquals(
+            ParcelFileDescriptor.MODE_WRITE_ONLY,
+            sanitizedMode and WRITABLE_ACCESS_MODE_MASK,
+        )
+    }
+
+    @Test
+    fun `write-only staging can commit changed bytes`() {
+        val store = newStore()
+        store.replaceWith(byteArrayOf(1, 2, 3))
+        val staged = store.createStagingSnapshotForTest(ParcelFileDescriptor.MODE_WRITE_ONLY)
+        staged.file.writeBytes(byteArrayOf(4, 5, 6))
+
+        val changed = store.commitStagingForTest(staged)
+
+        assertTrue(changed)
+        assertArrayEquals(byteArrayOf(4, 5, 6), store.dbFile.readBytes())
+        assertFalse(staged.file.exists())
+    }
+
+    @Test
     fun `staged local commit wins because sync server merge handles remote reconciliation`() {
         val store = newStore()
         val originalBytes = byteArrayOf(1, 2, 3)
@@ -112,4 +166,9 @@ class DatabaseFileStoreTest {
             filesDir = tmp.newFolder("files"),
             cacheDir = tmp.newFolder("cache"),
         )
+
+    private companion object {
+        private const val WRITABLE_ACCESS_MODE_MASK =
+            ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_READ_WRITE
+    }
 }

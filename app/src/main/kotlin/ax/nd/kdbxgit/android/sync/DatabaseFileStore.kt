@@ -93,15 +93,14 @@ open class DatabaseFileStore(
     }
 
     fun openForWrite(
+        parsedMode: Int,
         handler: Handler,
         onCommitted: (Boolean) -> Unit,
     ): ParcelFileDescriptor {
-        // Keep provider behavior consistent for every writable SAF mode: callers get
-        // a read/write copy of the current database and commit it on close.
-        val staged = createStagingSnapshot()
+        val staged = createStagingSnapshot(parsedMode)
         return ParcelFileDescriptor.open(
             staged.file,
-            ParcelFileDescriptor.MODE_READ_WRITE,
+            sanitizeWritableMode(parsedMode),
             handler,
         ) { error ->
             if (error == null) {
@@ -112,23 +111,34 @@ open class DatabaseFileStore(
         }
     }
 
-    internal fun createStagingSnapshotForTest(): StagedWrite = createStagingSnapshot()
+    internal fun createStagingSnapshotForTest(
+        parsedMode: Int = ParcelFileDescriptor.MODE_READ_WRITE,
+    ): StagedWrite = createStagingSnapshot(parsedMode)
 
     internal fun commitStagingForTest(staged: StagedWrite): Boolean = commitStaging(staged)
 
-    private fun createStagingSnapshot(): StagedWrite {
+    private fun createStagingSnapshot(parsedMode: Int): StagedWrite {
         lock.readLock().lock()
         return try {
             cacheDir.mkdirs()
             val staging = File(cacheDir, "staged_${System.nanoTime()}.kdbx")
-            if (dbFile.exists()) {
+            val truncate = parsedMode and ParcelFileDescriptor.MODE_TRUNCATE != 0
+            val baseHash = if (dbFile.exists()) {
+                dbFile.readBytes().sha256Hex()
+            } else {
+                byteArrayOf().sha256Hex()
+            }
+
+            if (truncate) {
+                staging.createNewFile()
+            } else if (dbFile.exists()) {
                 dbFile.copyTo(staging, overwrite = true)
             } else {
                 staging.createNewFile()
             }
             StagedWrite(
                 file = staging,
-                baseHash = staging.readBytes().sha256Hex(),
+                baseHash = baseHash,
             )
         } finally {
             lock.readLock().unlock()
@@ -155,6 +165,24 @@ open class DatabaseFileStore(
             }
         } finally {
             lock.writeLock().unlock()
+        }
+    }
+
+    internal companion object {
+        private val ACCESS_MODE_MASK =
+            ParcelFileDescriptor.MODE_READ_ONLY or
+                ParcelFileDescriptor.MODE_WRITE_ONLY or
+                ParcelFileDescriptor.MODE_READ_WRITE
+
+        fun sanitizeWritableModeForTest(parsedMode: Int): Int = sanitizeWritableMode(parsedMode)
+
+        private fun sanitizeWritableMode(parsedMode: Int): Int {
+            val accessMode = parsedMode and ACCESS_MODE_MASK
+            require(accessMode == ParcelFileDescriptor.MODE_WRITE_ONLY ||
+                accessMode == ParcelFileDescriptor.MODE_READ_WRITE) {
+                "Mode is not writable"
+            }
+            return parsedMode
         }
     }
 }
