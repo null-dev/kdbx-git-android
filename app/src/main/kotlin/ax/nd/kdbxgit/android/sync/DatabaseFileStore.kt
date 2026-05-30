@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.IOException
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 open class DatabaseFileStore(
@@ -178,10 +179,7 @@ open class DatabaseFileStore(
                 // sync pulled newer bytes while the FD was open; dirty tracking and
                 // the server merge reconcile that state on the next push.
                 filesDir.mkdirs()
-                if (!staged.file.renameTo(dbFile)) {
-                    dbFile.writeBytes(stagedBytes)
-                    staged.file.delete()
-                }
+                renameToLiveDatabaseOrThrow(staged.file)
                 true
             }
         } finally {
@@ -194,12 +192,17 @@ open class DatabaseFileStore(
         val temp = File(filesDir, "database_${System.nanoTime()}.tmp")
         try {
             temp.writeBytes(bytes)
-            if (!temp.renameTo(dbFile)) {
-                dbFile.writeBytes(bytes)
-                temp.delete()
-            }
+            renameToLiveDatabaseOrThrow(temp)
         } finally {
             if (temp.exists()) temp.delete()
+        }
+    }
+
+    protected open fun renameToLiveDatabase(source: File): Boolean = source.renameTo(dbFile)
+
+    private fun renameToLiveDatabaseOrThrow(source: File) {
+        if (!renameToLiveDatabase(source)) {
+            throw IOException("Failed to replace database.kdbx")
         }
     }
 

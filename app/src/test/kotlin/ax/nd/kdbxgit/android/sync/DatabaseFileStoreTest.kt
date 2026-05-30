@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 
 class DatabaseFileStoreTest {
 
@@ -63,6 +64,16 @@ class DatabaseFileStoreTest {
 
         assertFalse(replaced)
         assertArrayEquals(live, store.dbFile.readBytes())
+    }
+
+    @Test(expected = IOException::class)
+    fun `conditional replace throws when rename fails`() {
+        val store = RenameFailingStore()
+        val original = byteArrayOf(1, 2, 3)
+        store.replaceWith(original)
+        store.failRenames = true
+
+        store.replaceWithIfCurrent(original.sha256Hex(), byteArrayOf(4, 5, 6))
     }
 
     @Test
@@ -187,11 +198,37 @@ class DatabaseFileStoreTest {
         assertFalse(staged.file.exists())
     }
 
+    @Test(expected = IOException::class)
+    fun `staging commit throws when rename fails`() {
+        val store = RenameFailingStore()
+        val staged = store.createStagingSnapshotForTest()
+        staged.file.writeBytes(byteArrayOf(1))
+        store.failRenames = true
+
+        store.commitStagingForTest(staged)
+    }
+
     private fun newStore(): DatabaseFileStore =
         DatabaseFileStore(
             filesDir = tmp.newFolder("files"),
             cacheDir = tmp.newFolder("cache"),
         )
+
+    private fun RenameFailingStore(): RenameFailingDatabaseFileStore =
+        RenameFailingDatabaseFileStore(
+            filesDir = tmp.newFolder("files"),
+            cacheDir = tmp.newFolder("cache"),
+        )
+
+    private class RenameFailingDatabaseFileStore(
+        filesDir: java.io.File,
+        cacheDir: java.io.File,
+    ) : DatabaseFileStore(filesDir, cacheDir) {
+        var failRenames = false
+
+        override fun renameToLiveDatabase(source: java.io.File): Boolean =
+            if (failRenames) false else super.renameToLiveDatabase(source)
+    }
 
     private companion object {
         private const val WRITABLE_ACCESS_MODE_MASK =
