@@ -26,6 +26,11 @@ open class DatabaseFileStore(
         val baseHash: String,
     )
 
+    data class Snapshot(
+        val bytes: ByteArray?,
+        val hash: String?,
+    )
+
     fun metadata(): Metadata {
         lock.readLock().lock()
         return try {
@@ -54,6 +59,16 @@ open class DatabaseFileStore(
 
     fun hashOrNull(): String? = readBytesOrNull()?.sha256Hex()
 
+    fun snapshot(): Snapshot {
+        lock.readLock().lock()
+        return try {
+            val bytes = if (dbFile.exists()) dbFile.readBytes() else null
+            Snapshot(bytes = bytes, hash = bytes?.sha256Hex())
+        } finally {
+            lock.readLock().unlock()
+        }
+    }
+
     fun clear() {
         lock.writeLock().lock()
         try {
@@ -66,16 +81,22 @@ open class DatabaseFileStore(
     open fun replaceWith(bytes: ByteArray) {
         lock.writeLock().lock()
         try {
-            filesDir.mkdirs()
-            val temp = File(filesDir, "database_${System.nanoTime()}.tmp")
-            try {
-                temp.writeBytes(bytes)
-                if (!temp.renameTo(dbFile)) {
-                    dbFile.writeBytes(bytes)
-                    temp.delete()
-                }
-            } finally {
-                if (temp.exists()) temp.delete()
+            replaceLocked(bytes)
+        } finally {
+            lock.writeLock().unlock()
+        }
+    }
+
+    open fun replaceWithIfCurrent(expectedHash: String?, bytes: ByteArray): Boolean {
+        lock.writeLock().lock()
+        return try {
+            val currentBytes = if (dbFile.exists()) dbFile.readBytes() else null
+            val currentHash = currentBytes?.sha256Hex()
+            if (currentHash != expectedHash) {
+                false
+            } else {
+                replaceLocked(bytes)
+                true
             }
         } finally {
             lock.writeLock().unlock()
@@ -165,6 +186,20 @@ open class DatabaseFileStore(
             }
         } finally {
             lock.writeLock().unlock()
+        }
+    }
+
+    private fun replaceLocked(bytes: ByteArray) {
+        filesDir.mkdirs()
+        val temp = File(filesDir, "database_${System.nanoTime()}.tmp")
+        try {
+            temp.writeBytes(bytes)
+            if (!temp.renameTo(dbFile)) {
+                dbFile.writeBytes(bytes)
+                temp.delete()
+            }
+        } finally {
+            if (temp.exists()) temp.delete()
         }
     }
 

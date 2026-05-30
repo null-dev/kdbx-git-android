@@ -27,59 +27,36 @@ class SyncEngine(
         var documentChanged = false
 
         return try {
-            val localBytes = fileStore.readBytesOrNull()
-            val localHash = localBytes?.sha256Hex()
+            val localSnapshot = fileStore.snapshot()
+            val localBytes = localSnapshot.bytes
+            val localHash = localSnapshot.hash
             val confirmedHash = stateStore.lastSyncedHash
-            val dirtyAtStart = stateStore.localDirty
-            val hasDirtyLocalBytes = dirtyAtStart && localBytes != null && localHash != confirmedHash
-            val staleDirty = dirtyAtStart && !hasDirtyLocalBytes
+            val localNeedsUpload = localBytes != null && localHash != confirmedHash
 
-            if (!hasDirtyLocalBytes) {
-                onPhase(SyncEnginePhase.PULLING)
-                val remoteBytes = client.pull()
-                val remoteHash = remoteBytes.sha256Hex()
+            onPhase(SyncEnginePhase.PULLING)
+            val remoteBytes = client.pull()
+            val remoteHash = remoteBytes.sha256Hex()
 
-                if (remoteHash != stateStore.lastSyncedHash) {
-                    bytesDown = remoteBytes.size.toLong()
-                    val liveHash = fileStore.hashOrNull()
-                    if (liveHash == localHash) {
-                        fileStore.replaceWith(remoteBytes)
-                        stateStore.lastSyncedHash = remoteHash
-                        documentChanged = true
-                        if (staleDirty && fileStore.hashOrNull() == remoteHash) {
-                            stateStore.localDirty = false
-                        }
-                    } else {
-                        stateStore.lastSyncedHash = remoteHash
-                    }
-                    SyncEngineResult(
-                        type = SyncType.PULL,
-                        outcome = SyncOutcome.SUCCESS,
-                        bytesDown = bytesDown,
-                        bytesUp = 0L,
-                        documentChanged = documentChanged,
-                    )
-                } else {
-                    if (staleDirty && fileStore.hashOrNull() == remoteHash) {
-                        stateStore.localDirty = false
-                    }
-                    SyncEngineResult(
-                        type = SyncType.PULL,
-                        outcome = SyncOutcome.NO_CHANGE,
-                        bytesDown = 0L,
-                        bytesUp = 0L,
-                        documentChanged = false,
-                    )
+            if (localBytes == null) {
+                bytesDown = remoteBytes.size.toLong()
+                documentChanged = fileStore.replaceWithIfCurrent(localHash, remoteBytes)
+                stateStore.lastSyncedHash = remoteHash
+                if (documentChanged && fileStore.hashOrNull() == remoteHash) {
+                    stateStore.localDirty = false
                 }
-            } else {
-                onPhase(SyncEnginePhase.PULLING)
-                val remoteBytes = client.pull()
-                val remoteHash = remoteBytes.sha256Hex()
+                return SyncEngineResult(
+                    type = SyncType.PULL,
+                    outcome = SyncOutcome.SUCCESS,
+                    bytesDown = bytesDown,
+                    bytesUp = 0L,
+                    documentChanged = documentChanged,
+                )
+            }
 
+            if (localNeedsUpload) {
                 if (remoteHash == localHash) {
                     stateStore.lastSyncedHash = remoteHash
-                    val liveHash = fileStore.hashOrNull()
-                    if (liveHash == localHash) {
+                    if (fileStore.hashOrNull() == localHash) {
                         stateStore.localDirty = false
                     }
                     return SyncEngineResult(
@@ -102,10 +79,8 @@ class SyncEngine(
                 val outcome =
                     if (confirmedRemoteHash == localHash) SyncOutcome.SUCCESS else SyncOutcome.MERGED
 
-                val liveHash = fileStore.hashOrNull()
-                if (liveHash == localHash) {
-                    fileStore.replaceWith(confirmedBytes)
-                    documentChanged = true
+                documentChanged = fileStore.replaceWithIfCurrent(localHash, confirmedBytes)
+                if (documentChanged && fileStore.hashOrNull() == confirmedRemoteHash) {
                     stateStore.localDirty = false
                 }
                 stateStore.lastSyncedHash = confirmedRemoteHash
@@ -116,6 +91,31 @@ class SyncEngine(
                     bytesDown = bytesDown,
                     bytesUp = bytesUp,
                     documentChanged = documentChanged,
+                )
+            } else if (remoteHash != confirmedHash) {
+                bytesDown = remoteBytes.size.toLong()
+                documentChanged = fileStore.replaceWithIfCurrent(localHash, remoteBytes)
+                stateStore.lastSyncedHash = remoteHash
+                if (documentChanged && fileStore.hashOrNull() == remoteHash) {
+                    stateStore.localDirty = false
+                }
+                SyncEngineResult(
+                    type = SyncType.PULL,
+                    outcome = SyncOutcome.SUCCESS,
+                    bytesDown = bytesDown,
+                    bytesUp = 0L,
+                    documentChanged = documentChanged,
+                )
+            } else {
+                if (fileStore.hashOrNull() == remoteHash) {
+                    stateStore.localDirty = false
+                }
+                SyncEngineResult(
+                    type = SyncType.PULL,
+                    outcome = SyncOutcome.NO_CHANGE,
+                    bytesDown = 0L,
+                    bytesUp = 0L,
+                    documentChanged = false,
                 )
             }
         } catch (e: Exception) {

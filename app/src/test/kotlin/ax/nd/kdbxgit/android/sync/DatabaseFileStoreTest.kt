@@ -40,6 +40,32 @@ class DatabaseFileStoreTest {
     }
 
     @Test
+    fun `conditional replace updates live bytes when expected hash matches`() {
+        val store = newStore()
+        val original = byteArrayOf(1, 2, 3)
+        val replacement = byteArrayOf(4, 5, 6)
+        store.replaceWith(original)
+
+        val replaced = store.replaceWithIfCurrent(original.sha256Hex(), replacement)
+
+        assertTrue(replaced)
+        assertArrayEquals(replacement, store.dbFile.readBytes())
+    }
+
+    @Test
+    fun `conditional replace preserves live bytes when expected hash is stale`() {
+        val store = newStore()
+        val live = byteArrayOf(1, 2, 3)
+        val replacement = byteArrayOf(4, 5, 6)
+        store.replaceWith(live)
+
+        val replaced = store.replaceWithIfCurrent(byteArrayOf(9).sha256Hex(), replacement)
+
+        assertFalse(replaced)
+        assertArrayEquals(live, store.dbFile.readBytes())
+    }
+
+    @Test
     fun `clear deletes database`() {
         val store = newStore()
         store.replaceWith(byteArrayOf(1, 2, 3))
