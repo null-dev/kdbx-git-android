@@ -27,10 +27,15 @@ class SyncEngine(
         var documentChanged = false
 
         return try {
+            // Snapshot once: this is the local version this sync attempt may push
+            // or conditionally replace. Later local writes must win over this run.
             val localSnapshot = fileStore.snapshot()
             val localBytes = localSnapshot.bytes
             val localHash = localSnapshot.hash
             val confirmedHash = stateStore.lastSyncedHash
+
+            // Treat the file hash as authoritative. localDirty only helps schedule
+            // work; a hash mismatch must still be uploaded after state recovery.
             val localNeedsUpload = localBytes != null && localHash != confirmedHash
 
             onPhase(SyncEnginePhase.PULLING)
@@ -38,6 +43,8 @@ class SyncEngine(
             val remoteHash = remoteBytes.sha256Hex()
 
             if (localBytes == null) {
+                // First sync or local reset: install the remote database if no
+                // local writer created one while the pull was in flight.
                 bytesDown = remoteBytes.size.toLong()
                 documentChanged = fileStore.replaceWithIfCurrent(localHash, remoteBytes)
                 stateStore.lastSyncedHash = remoteHash
@@ -79,6 +86,8 @@ class SyncEngine(
                 val outcome =
                     if (confirmedRemoteHash == localHash) SyncOutcome.SUCCESS else SyncOutcome.MERGED
 
+                // Pull back the server's post-merge result, but only replace the
+                // live file if it is still the snapshot we just uploaded.
                 documentChanged = fileStore.replaceWithIfCurrent(localHash, confirmedBytes)
                 if (documentChanged && fileStore.hashOrNull() == confirmedRemoteHash) {
                     stateStore.localDirty = false
@@ -93,6 +102,8 @@ class SyncEngine(
                     documentChanged = documentChanged,
                 )
             } else if (remoteHash != confirmedHash) {
+                // Clean local state, remote advanced: apply it only if no local
+                // write has appeared since the initial snapshot.
                 bytesDown = remoteBytes.size.toLong()
                 documentChanged = fileStore.replaceWithIfCurrent(localHash, remoteBytes)
                 stateStore.lastSyncedHash = remoteHash
