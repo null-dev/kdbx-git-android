@@ -34,8 +34,8 @@ class SyncEngine(
             val localHash = localSnapshot.hash
             val confirmedHash = stateStore.lastSyncedHash
 
-            // Treat the file hash as authoritative. localDirty only helps schedule
-            // work; a hash mismatch must still be uploaded after state recovery.
+            // Treat the file hash as authoritative: a mismatch means local bytes
+            // need to be uploaded, regardless of how this sync was triggered.
             val localNeedsUpload = localBytes != null && localHash != confirmedHash
 
             onPhase(SyncEnginePhase.PULLING)
@@ -48,9 +48,6 @@ class SyncEngine(
                 bytesDown = remoteBytes.size.toLong()
                 documentChanged = fileStore.replaceWithIfCurrent(localHash, remoteBytes)
                 stateStore.lastSyncedHash = remoteHash
-                if (documentChanged && fileStore.hashOrNull() == remoteHash) {
-                    stateStore.localDirty = false
-                }
                 return SyncEngineResult(
                     type = SyncType.PULL,
                     outcome = SyncOutcome.SUCCESS,
@@ -63,9 +60,6 @@ class SyncEngine(
             if (localNeedsUpload) {
                 if (remoteHash == localHash) {
                     stateStore.lastSyncedHash = remoteHash
-                    if (fileStore.hashOrNull() == localHash) {
-                        stateStore.localDirty = false
-                    }
                     return SyncEngineResult(
                         type = SyncType.PULL,
                         outcome = SyncOutcome.NO_CHANGE,
@@ -89,9 +83,6 @@ class SyncEngine(
                 // Pull back the server's post-merge result, but only replace the
                 // live file if it is still the snapshot we just uploaded.
                 documentChanged = fileStore.replaceWithIfCurrent(localHash, confirmedBytes)
-                if (documentChanged && fileStore.hashOrNull() == confirmedRemoteHash) {
-                    stateStore.localDirty = false
-                }
                 stateStore.lastSyncedHash = confirmedRemoteHash
 
                 SyncEngineResult(
@@ -107,9 +98,6 @@ class SyncEngine(
                 bytesDown = remoteBytes.size.toLong()
                 documentChanged = fileStore.replaceWithIfCurrent(localHash, remoteBytes)
                 stateStore.lastSyncedHash = remoteHash
-                if (documentChanged && fileStore.hashOrNull() == remoteHash) {
-                    stateStore.localDirty = false
-                }
                 SyncEngineResult(
                     type = SyncType.PULL,
                     outcome = SyncOutcome.SUCCESS,
@@ -118,9 +106,6 @@ class SyncEngine(
                     documentChanged = documentChanged,
                 )
             } else {
-                if (fileStore.hashOrNull() == remoteHash) {
-                    stateStore.localDirty = false
-                }
                 SyncEngineResult(
                     type = SyncType.PULL,
                     outcome = SyncOutcome.NO_CHANGE,

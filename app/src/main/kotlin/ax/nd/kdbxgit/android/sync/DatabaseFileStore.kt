@@ -15,6 +15,8 @@ open class DatabaseFileStore(
     val dbFile: File = File(filesDir, "database.kdbx")
 
     private val lock = ReentrantReadWriteLock()
+    @Volatile
+    private var localChangeObserver: (() -> Unit)? = null
 
     data class Metadata(
         val exists: Boolean,
@@ -79,6 +81,10 @@ open class DatabaseFileStore(
         }
     }
 
+    fun setLocalChangeObserver(observer: (() -> Unit)?) {
+        localChangeObserver = observer
+    }
+
     open fun replaceWith(bytes: ByteArray) {
         lock.writeLock().lock()
         try {
@@ -117,7 +123,6 @@ open class DatabaseFileStore(
     fun openForWrite(
         parsedMode: Int,
         handler: Handler,
-        onCommitted: (Boolean) -> Unit,
     ): ParcelFileDescriptor {
         val staged = createStagingSnapshot(parsedMode)
         return ParcelFileDescriptor.open(
@@ -126,7 +131,7 @@ open class DatabaseFileStore(
             handler,
         ) { error ->
             if (error == null) {
-                onCommitted(commitStaging(staged))
+                commitStaging(staged)
             } else {
                 staged.file.delete()
             }
@@ -168,23 +173,27 @@ open class DatabaseFileStore(
     }
 
     private fun commitStaging(staged: StagedWrite): Boolean {
+        var changed = false
         lock.writeLock().lock()
-        return try {
+        try {
             val stagedBytes = staged.file.readBytes()
             if (stagedBytes.sha256Hex() == staged.baseHash) {
                 staged.file.delete()
-                false
             } else {
                 // A changed KeePass save intentionally replaces the live file even if
-                // sync pulled newer bytes while the FD was open; dirty tracking and
-                // the server merge reconcile that state on the next push.
+                // sync pulled newer bytes while the FD was open. The next sync push
+                // lets the server merge reconcile that state.
                 filesDir.mkdirs()
                 renameToLiveDatabaseOrThrow(staged.file)
-                true
+                changed = true
             }
         } finally {
             lock.writeLock().unlock()
         }
+        if (changed) {
+            localChangeObserver?.invoke()
+        }
+        return changed
     }
 
     private fun replaceLocked(bytes: ByteArray) {

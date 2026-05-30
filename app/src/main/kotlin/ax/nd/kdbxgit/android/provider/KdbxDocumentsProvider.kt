@@ -10,11 +10,10 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
+import ax.nd.kdbxgit.android.DatabaseDocumentContract
 import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.R
-import ax.nd.kdbxgit.android.sync.SyncRepository
-import ax.nd.kdbxgit.android.sync.SyncTrigger
-import ax.nd.kdbxgit.android.sync.SyncWorker
+import ax.nd.kdbxgit.android.sync.DatabaseFileStore
 
 /**
  * Exposes a single KDBX document via Android's Storage Access Framework.
@@ -23,14 +22,13 @@ import ax.nd.kdbxgit.android.sync.SyncWorker
  * are mediated by the system file picker. No app can obtain a valid URI without
  * an explicit user gesture — there are no guessable paths and no ambient access.
  *
- * File access, staging, hashing, and locking live in
- * [ax.nd.kdbxgit.android.sync.DatabaseFileStore]. This provider adapts SAF calls
- * into repository/store operations and emits notifications after changed writes.
+ * File access, staging, hashing, and locking live in [DatabaseFileStore].
+ * This provider only adapts SAF calls into file-store operations.
  */
 class KdbxDocumentsProvider : DocumentsProvider() {
 
-    private val syncRepository: SyncRepository
-        get() = (context!!.applicationContext as KdbxGitApplication).syncRepository
+    private val fileStore: DatabaseFileStore
+        get() = (context!!.applicationContext as KdbxGitApplication).databaseFileStore
 
     // Background thread that receives the ParcelFileDescriptor.OnCloseListener callback.
     private val handlerThread = HandlerThread("kdbx-provider-io")
@@ -92,9 +90,9 @@ class KdbxDocumentsProvider : DocumentsProvider() {
     }
 
     private fun addFileRow(cursor: MatrixCursor) {
-        val metadata = syncRepository.databaseFileStore.metadata()
+        val metadata = fileStore.metadata()
         cursor.newRow().apply {
-            add(Document.COLUMN_DOCUMENT_ID,   SyncRepository.DB_DOC_ID)
+            add(Document.COLUMN_DOCUMENT_ID,   DatabaseDocumentContract.DB_DOC_ID)
             add(Document.COLUMN_DISPLAY_NAME,  "database.kdbx")
             add(Document.COLUMN_MIME_TYPE,     KDBX_MIME_TYPE)
             add(Document.COLUMN_FLAGS,         Document.FLAG_SUPPORTS_WRITE)
@@ -111,25 +109,18 @@ class KdbxDocumentsProvider : DocumentsProvider() {
         signal: CancellationSignal?,
     ): ParcelFileDescriptor {
         val parsedMode = ParcelFileDescriptor.parseMode(mode ?: "r")
-        val fileStore = syncRepository.databaseFileStore
 
         if (parsedMode == ParcelFileDescriptor.MODE_READ_ONLY) {
             return fileStore.openForRead()
         }
 
-        return fileStore.openForWrite(parsedMode, handler) { changed ->
-            if (changed) {
-                syncRepository.markDirty()
-                context!!.contentResolver.notifyChange(docUri(), null)
-                SyncWorker.enqueueSyncNow(context!!, SyncTrigger.WRITE)
-            }
-        }
+        return fileStore.openForWrite(parsedMode, handler)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private fun docUri() = DocumentsContract.buildDocumentUri(
-        SyncRepository.DOCUMENTS_AUTHORITY, SyncRepository.DB_DOC_ID
+        DatabaseDocumentContract.DOCUMENTS_AUTHORITY, DatabaseDocumentContract.DB_DOC_ID
     )
 
     // ── Constants ─────────────────────────────────────────────────────────

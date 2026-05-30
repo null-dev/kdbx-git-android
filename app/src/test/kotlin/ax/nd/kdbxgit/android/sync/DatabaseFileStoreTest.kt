@@ -66,6 +66,22 @@ class DatabaseFileStoreTest {
         assertArrayEquals(live, store.dbFile.readBytes())
     }
 
+    @Test
+    fun `sync replacements do not notify local change observer`() {
+        val store = newStore()
+        var changeCount = 0
+        store.setLocalChangeObserver { changeCount++ }
+
+        store.replaceWith(byteArrayOf(1, 2, 3))
+        val replaced = store.replaceWithIfCurrent(
+            expectedHash = byteArrayOf(1, 2, 3).sha256Hex(),
+            bytes = byteArrayOf(4, 5, 6),
+        )
+
+        assertTrue(replaced)
+        assertEquals(0, changeCount)
+    }
+
     @Test(expected = IOException::class)
     fun `conditional replace throws when rename fails`() {
         val store = RenameFailingStore()
@@ -112,6 +128,35 @@ class DatabaseFileStoreTest {
         assertTrue(changed)
         assertArrayEquals(byteArrayOf(1, 2, 4), store.dbFile.readBytes())
         assertFalse(staged.file.exists())
+    }
+
+    @Test
+    fun `changed staging commit notifies local change observer`() {
+        val store = newStore()
+        var changeCount = 0
+        store.setLocalChangeObserver { changeCount++ }
+        val staged = store.createStagingSnapshotForTest()
+        staged.file.writeBytes(byteArrayOf(1))
+
+        val changed = store.commitStagingForTest(staged)
+
+        assertTrue(changed)
+        assertEquals(1, changeCount)
+    }
+
+    @Test
+    fun `unchanged staging commit does not notify local change observer`() {
+        val store = newStore()
+        var changeCount = 0
+        store.setLocalChangeObserver { changeCount++ }
+        val bytes = byteArrayOf(1, 2, 3)
+        store.replaceWith(bytes)
+        val staged = store.createStagingSnapshotForTest()
+
+        val changed = store.commitStagingForTest(staged)
+
+        assertFalse(changed)
+        assertEquals(0, changeCount)
     }
 
     @Test

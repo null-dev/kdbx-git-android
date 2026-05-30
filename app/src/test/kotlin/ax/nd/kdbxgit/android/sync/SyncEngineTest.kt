@@ -41,7 +41,6 @@ class SyncEngineTest {
         assertArrayEquals(localBytes, store.readBytesOrNull())
         assertEquals(originalModified, store.dbFile.lastModified())
         assertEquals(localBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
         assertEquals(1, client.pullCount)
         assertEquals(0, client.pushes.size)
     }
@@ -67,7 +66,6 @@ class SyncEngineTest {
         assertEquals(listOf(SyncEnginePhase.PULLING), phases)
         assertArrayEquals(remoteBytes, store.readBytesOrNull())
         assertEquals(remoteBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
     }
 
     @Test
@@ -93,7 +91,6 @@ class SyncEngineTest {
         assertEquals("replace exploded", result.errorMessage)
         assertArrayEquals(localBytes, store.readBytesOrNull())
         assertEquals(localBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
     }
 
     @Test
@@ -108,7 +105,6 @@ class SyncEngineTest {
             pulls = ArrayDeque(listOf(remoteBytes)),
             beforePullReturn = {
                 store.replaceWith(newerLocalBytes)
-                stateStore.localDirty = true
             },
         )
 
@@ -122,7 +118,6 @@ class SyncEngineTest {
         assertNull(result.errorMessage)
         assertArrayEquals(newerLocalBytes, store.readBytesOrNull())
         assertEquals(remoteBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertTrue(stateStore.localDirty)
     }
 
     @Test
@@ -148,19 +143,15 @@ class SyncEngineTest {
         assertFalse(result.documentChanged)
         assertArrayEquals(newerLocalBytes, store.readBytesOrNull())
         assertEquals(remoteBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
     }
 
     @Test
-    fun `dirty local-ahead push-pull clears dirty and stores confirmed hash`() = runTest {
+    fun `local-ahead push-pull stores confirmed hash`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(pulls = ArrayDeque(listOf(confirmedBytes, localBytes)))
         val phases = mutableListOf<SyncEnginePhase>()
 
@@ -179,19 +170,15 @@ class SyncEngineTest {
         assertEquals(listOf(localBytes.toList()), client.pushes.map { it.toList() })
         assertArrayEquals(localBytes, store.readBytesOrNull())
         assertEquals(localBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
     }
 
     @Test
-    fun `local hash mismatch pushes even when dirty flag is false`() = runTest {
+    fun `local hash mismatch pushes without dirty flag`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = false,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(pulls = ArrayDeque(listOf(confirmedBytes, localBytes)))
 
         val result = SyncEngine(store, stateStore).sync(client)
@@ -201,20 +188,16 @@ class SyncEngineTest {
         assertEquals(listOf(localBytes.toList()), client.pushes.map { it.toList() })
         assertArrayEquals(localBytes, store.readBytesOrNull())
         assertEquals(localBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
     }
 
     @Test
-    fun `dirty merge result replaces local bytes with server result and reports MERGED`() = runTest {
+    fun `merge result replaces local bytes with server result and reports MERGED`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val mergedBytes = bytes("merged")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(pulls = ArrayDeque(listOf(confirmedBytes, mergedBytes)))
         val phases = mutableListOf<SyncEnginePhase>()
 
@@ -232,19 +215,15 @@ class SyncEngineTest {
         assertEquals(2, client.pullCount)
         assertArrayEquals(mergedBytes, store.readBytesOrNull())
         assertEquals(mergedBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
     }
 
     @Test
-    fun `stale dirty matching remote hash clears dirty without upload when confirmed hash is old`() = runTest {
+    fun `local matching remote hash confirms without upload when confirmed hash is old`() = runTest {
         val confirmedBytes = bytes("base")
         val currentBytes = bytes("current")
         val store = newFileStore()
         store.replaceWith(currentBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(pulls = ArrayDeque(listOf(currentBytes)))
         val phases = mutableListOf<SyncEnginePhase>()
 
@@ -265,18 +244,14 @@ class SyncEngineTest {
         assertEquals(0, client.pushes.size)
         assertArrayEquals(currentBytes, store.readBytesOrNull())
         assertEquals(currentBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertFalse(stateStore.localDirty)
     }
 
     @Test
-    fun `stale dirty matching confirmed hash clears dirty without upload`() = runTest {
+    fun `local matching confirmed hash does not upload`() = runTest {
         val bytes = bytes("same")
         val store = newFileStore()
         store.replaceWith(bytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = bytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = bytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(pulls = ArrayDeque(listOf(bytes)))
 
         val result = SyncEngine(store, stateStore).sync(client)
@@ -287,25 +262,20 @@ class SyncEngineTest {
         assertEquals(0L, result.bytesUp)
         assertFalse(result.documentChanged)
         assertArrayEquals(bytes, store.readBytesOrNull())
-        assertFalse(stateStore.localDirty)
         assertEquals(0, client.pushes.size)
     }
 
     @Test
-    fun `dirty preflight matching remote preserves newer local bytes written during pull`() = runTest {
+    fun `preflight matching remote preserves newer local bytes written during pull`() = runTest {
         val localBytes = bytes("local")
         val newerLocalBytes = bytes("newer local")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = bytes("base").sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = bytes("base").sha256Hex())
         val client = FakeRemoteDatabaseClient(
             pulls = ArrayDeque(listOf(localBytes)),
             beforePullReturn = {
                 store.replaceWith(newerLocalBytes)
-                stateStore.localDirty = true
             },
         )
 
@@ -325,19 +295,15 @@ class SyncEngineTest {
         assertEquals(0, client.pushes.size)
         assertArrayEquals(newerLocalBytes, store.readBytesOrNull())
         assertEquals(localBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertTrue(stateStore.localDirty)
     }
 
     @Test
-    fun `push failure preserves dirty and hash`() = runTest {
+    fun `push failure preserves local bytes and hash`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(
             pulls = ArrayDeque(listOf(confirmedBytes)),
             pushException = IllegalStateException("push exploded"),
@@ -353,19 +319,15 @@ class SyncEngineTest {
         assertEquals("push exploded", result.errorMessage)
         assertArrayEquals(localBytes, store.readBytesOrNull())
         assertEquals(confirmedBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertTrue(stateStore.localDirty)
     }
 
     @Test
-    fun `dirty preflight pull failure preserves dirty and hash`() = runTest {
+    fun `preflight pull failure preserves local bytes and hash`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(
             pulls = ArrayDeque(),
             pullExceptions = ArrayDeque(listOf(IllegalStateException("preflight exploded"))),
@@ -382,19 +344,15 @@ class SyncEngineTest {
         assertEquals(0, client.pushes.size)
         assertArrayEquals(localBytes, store.readBytesOrNull())
         assertEquals(confirmedBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertTrue(stateStore.localDirty)
     }
 
     @Test
-    fun `confirm pull failure after successful push preserves dirty and hash`() = runTest {
+    fun `confirm pull failure after successful push preserves local bytes and hash`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(
             pulls = ArrayDeque(listOf(confirmedBytes)),
             pullExceptions = ArrayDeque(listOf(null, IllegalStateException("confirm exploded"))),
@@ -411,7 +369,6 @@ class SyncEngineTest {
         assertEquals(listOf(localBytes.toList()), client.pushes.map { it.toList() })
         assertArrayEquals(localBytes, store.readBytesOrNull())
         assertEquals(confirmedBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertTrue(stateStore.localDirty)
     }
 
     @Test(expected = CancellationException::class)
@@ -429,17 +386,14 @@ class SyncEngineTest {
     }
 
     @Test
-    fun `dirty push-pull preserves newer local bytes written during confirm pull`() = runTest {
+    fun `push-pull preserves newer local bytes written during confirm pull`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val newerLocalBytes = bytes("newer local")
         val mergedBytes = bytes("merged")
         val store = newFileStore()
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(
             pulls = ArrayDeque(listOf(confirmedBytes, mergedBytes)),
             beforePullReturn = { pullCount ->
@@ -459,11 +413,10 @@ class SyncEngineTest {
         assertEquals(listOf(localBytes.toList()), client.pushes.map { it.toList() })
         assertArrayEquals(newerLocalBytes, store.readBytesOrNull())
         assertEquals(mergedBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertTrue(stateStore.localDirty)
     }
 
     @Test
-    fun `dirty push-pull preserves local bytes written during transactional confirm replace`() = runTest {
+    fun `push-pull preserves local bytes written during transactional confirm replace`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val newerLocalBytes = bytes("newer local")
@@ -474,10 +427,7 @@ class SyncEngineTest {
             mutateToBytes = newerLocalBytes,
         )
         store.replaceWith(localBytes)
-        val stateStore = FakeSyncStateStore(
-            lastSyncedHash = confirmedBytes.sha256Hex(),
-            localDirty = true,
-        )
+        val stateStore = FakeSyncStateStore(lastSyncedHash = confirmedBytes.sha256Hex())
         val client = FakeRemoteDatabaseClient(pulls = ArrayDeque(listOf(confirmedBytes, mergedBytes)))
 
         val result = SyncEngine(store, stateStore).sync(client)
@@ -490,7 +440,6 @@ class SyncEngineTest {
         assertEquals(listOf(localBytes.toList()), client.pushes.map { it.toList() })
         assertArrayEquals(newerLocalBytes, store.readBytesOrNull())
         assertEquals(mergedBytes.sha256Hex(), stateStore.lastSyncedHash)
-        assertTrue(stateStore.localDirty)
     }
 
     private fun newFileStore(): DatabaseFileStore =
@@ -536,12 +485,10 @@ class SyncEngineTest {
 
     private class FakeSyncStateStore(
         override var lastSyncedHash: String? = null,
-        override var localDirty: Boolean = false,
         override var consecutiveFailures: Int = 0,
     ) : SyncStateStore {
         override fun reset() {
             lastSyncedHash = null
-            localDirty = false
             consecutiveFailures = 0
         }
     }

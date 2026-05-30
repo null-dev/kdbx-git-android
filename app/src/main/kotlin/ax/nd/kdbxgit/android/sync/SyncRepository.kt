@@ -2,6 +2,7 @@ package ax.nd.kdbxgit.android.sync
 
 import android.content.Context
 import android.provider.DocumentsContract
+import ax.nd.kdbxgit.android.DatabaseDocumentContract
 import ax.nd.kdbxgit.android.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,9 +16,9 @@ class SyncRepository(
     private val context: Context,
     private val settingsRepository: SettingsRepository,
     private val syncLogDao: SyncLogDao,
+    private val fileStore: DatabaseFileStore,
 ) {
     private val notifier = SyncNotifier(context)
-    private val fileStore = DatabaseFileStore(context.filesDir, context.cacheDir)
     private val stateStore = SharedPreferencesSyncStateStore.from(context)
     private val syncEngine = SyncEngine(fileStore, stateStore)
 
@@ -35,13 +36,16 @@ class SyncRepository(
     val lastSyncedHash: String?
         get() = stateStore.lastSyncedHash
 
-    /** True if the local file has been written since the last successful push. */
-    val localDirty: Boolean
-        get() = stateStore.localDirty
-
     // Ensures at most one sync runs at a time. A second caller will suspend until
-    // the first finishes, then run with the freshest dirty/hash state.
+    // the first finishes, then run with the freshest file/hash state.
     val syncMutex = Mutex()
+
+    init {
+        fileStore.setLocalChangeObserver {
+            notifyFileChanged()
+            SyncWorker.enqueueSyncNow(context, SyncTrigger.WRITE)
+        }
+    }
 
     /**
      * Wipes the local KDBX file and resets all sync state.
@@ -56,16 +60,8 @@ class SyncRepository(
     }
 
     /**
-     * Called by [ax.nd.kdbxgit.android.provider.KdbxDocumentsProvider] after a
-     * successful write so the next sync knows there is local work to push.
-     */
-    fun markDirty() {
-        stateStore.markDirty()
-    }
-
-    /**
      * Runs one full sync cycle. Concurrent calls serialize via [syncMutex]; the
-     * second caller sees any dirty state accumulated while the first was running.
+     * second caller sees any file changes accumulated while the first was running.
      */
     suspend fun sync(trigger: SyncTrigger) {
         val config = settingsRepository.serverConfig.value ?: return
@@ -136,12 +132,10 @@ class SyncRepository(
     }
 
     private fun notifyFileChanged() {
-        val uri = DocumentsContract.buildDocumentUri(DOCUMENTS_AUTHORITY, DB_DOC_ID)
+        val uri = DocumentsContract.buildDocumentUri(
+            DatabaseDocumentContract.DOCUMENTS_AUTHORITY,
+            DatabaseDocumentContract.DB_DOC_ID,
+        )
         context.contentResolver.notifyChange(uri, null)
-    }
-
-    companion object {
-        const val DOCUMENTS_AUTHORITY = "ax.nd.kdbxgit.android.documents"
-        const val DB_DOC_ID           = "database.kdbx"
     }
 }
