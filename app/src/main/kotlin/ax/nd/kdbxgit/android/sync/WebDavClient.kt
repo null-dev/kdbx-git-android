@@ -20,7 +20,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-class WebDavClient(private val config: ServerConfig) {
+class WebDavClient(private val config: ServerConfig) : RemoteDatabaseClient {
 
     private val http = OkHttpClient.Builder()
         .addInterceptor(BasicAuthInterceptor(config.username, config.password))
@@ -42,7 +42,7 @@ class WebDavClient(private val config: ServerConfig) {
      * Downloads the KDBX file from the server and returns its raw bytes.
      * Throws [WebDavException] on a non-2xx response.
      */
-    suspend fun pull(): ByteArray = withContext(Dispatchers.IO) {
+    override suspend fun pull(): ByteArray = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(dbUrl())
             .get()
@@ -57,7 +57,7 @@ class WebDavClient(private val config: ServerConfig) {
      * Uploads [bytes] to the server as the KDBX file.
      * Throws [WebDavException] on a non-2xx response.
      */
-    suspend fun push(bytes: ByteArray): Unit = withContext(Dispatchers.IO) {
+    override suspend fun push(bytes: ByteArray): Unit = withContext(Dispatchers.IO) {
         val body = bytes.toRequestBody(KDBX_MEDIA_TYPE)
         val request = Request.Builder()
             .url(dbUrl())
