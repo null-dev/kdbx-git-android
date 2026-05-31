@@ -146,7 +146,7 @@ class SyncEngineTest {
     }
 
     @Test
-    fun `local-ahead push-pull stores confirmed hash`() = runTest {
+    fun `local-ahead push-pull stores confirmed hash without reporting unchanged document`() = runTest {
         val confirmedBytes = bytes("base")
         val localBytes = bytes("local")
         val store = newFileStore()
@@ -161,7 +161,7 @@ class SyncEngineTest {
         assertEquals(SyncOutcome.SUCCESS, result.outcome)
         assertEquals(localBytes.size.toLong(), result.bytesDown)
         assertEquals(localBytes.size.toLong(), result.bytesUp)
-        assertTrue(result.documentChanged)
+        assertFalse(result.documentChanged)
         assertEquals(
             listOf(SyncEnginePhase.PULLING, SyncEnginePhase.PUSHING, SyncEnginePhase.PULLING),
             phases,

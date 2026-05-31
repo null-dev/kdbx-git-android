@@ -100,6 +100,8 @@ open class DatabaseFileStore(
             val currentHash = currentBytes?.sha256Hex()
             if (currentHash != expectedHash) {
                 false
+            } else if (currentHash == bytes.sha256Hex()) {
+                false
             } else {
                 replaceLocked(bytes)
                 true
