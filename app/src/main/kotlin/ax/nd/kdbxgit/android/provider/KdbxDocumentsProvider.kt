@@ -10,14 +10,10 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
+import ax.nd.kdbxgit.android.DatabaseDocumentContract
 import ax.nd.kdbxgit.android.KdbxGitApplication
 import ax.nd.kdbxgit.android.R
-import ax.nd.kdbxgit.android.sync.SyncRepository
-import ax.nd.kdbxgit.android.sync.SyncTrigger
-import ax.nd.kdbxgit.android.sync.SyncWorker
-import java.io.File
-import java.io.FileNotFoundException
-import java.util.concurrent.locks.ReentrantReadWriteLock
+import ax.nd.kdbxgit.android.sync.DatabaseFileStore
 
 /**
  * Exposes a single KDBX document via Android's Storage Access Framework.
@@ -26,25 +22,17 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
  * are mediated by the system file picker. No app can obtain a valid URI without
  * an explicit user gesture — there are no guessable paths and no ambient access.
  *
- * Concurrency:
- *  - Multiple concurrent readers are allowed (shared read lock, held briefly).
- *  - A write commit acquires the exclusive write lock for the duration of the
- *    atomic rename only — it does NOT hold the lock while the client is editing.
- *  - [SyncRepository.syncMutex] serialises sync runs; a write arriving mid-sync
- *    sets the dirty flag and the subsequent sync run picks it up.
+ * File access, staging, hashing, and locking live in [DatabaseFileStore].
+ * This provider only adapts SAF calls into file-store operations.
  */
 class KdbxDocumentsProvider : DocumentsProvider() {
 
-    private val syncRepository: SyncRepository
-        get() = (context!!.applicationContext as KdbxGitApplication).syncRepository
+    private val fileStore: DatabaseFileStore
+        get() = (context!!.applicationContext as KdbxGitApplication).databaseFileStore
 
     // Background thread that receives the ParcelFileDescriptor.OnCloseListener callback.
     private val handlerThread = HandlerThread("kdbx-provider-io")
     private lateinit var handler: Handler
-
-    // Read lock: held briefly while opening the live file or copying it to staging.
-    // Write lock: held briefly during the atomic commit rename.
-    private val lock = ReentrantReadWriteLock()
 
     override fun onCreate(): Boolean {
         handlerThread.start()
@@ -102,14 +90,14 @@ class KdbxDocumentsProvider : DocumentsProvider() {
     }
 
     private fun addFileRow(cursor: MatrixCursor) {
-        val dbFile = syncRepository.dbFile
+        val metadata = fileStore.metadata()
         cursor.newRow().apply {
-            add(Document.COLUMN_DOCUMENT_ID,   SyncRepository.DB_DOC_ID)
+            add(Document.COLUMN_DOCUMENT_ID,   DatabaseDocumentContract.DB_DOC_ID)
             add(Document.COLUMN_DISPLAY_NAME,  "database.kdbx")
             add(Document.COLUMN_MIME_TYPE,     KDBX_MIME_TYPE)
             add(Document.COLUMN_FLAGS,         Document.FLAG_SUPPORTS_WRITE)
-            add(Document.COLUMN_SIZE,          if (dbFile.exists()) dbFile.length() else 0L)
-            add(Document.COLUMN_LAST_MODIFIED, if (dbFile.exists()) dbFile.lastModified() else 0L)
+            add(Document.COLUMN_SIZE,          metadata.size)
+            add(Document.COLUMN_LAST_MODIFIED, metadata.lastModified)
         }
     }
 
@@ -120,79 +108,19 @@ class KdbxDocumentsProvider : DocumentsProvider() {
         mode: String?,
         signal: CancellationSignal?,
     ): ParcelFileDescriptor {
-        val dbFile = syncRepository.dbFile
         val parsedMode = ParcelFileDescriptor.parseMode(mode ?: "r")
 
         if (parsedMode == ParcelFileDescriptor.MODE_READ_ONLY) {
-            // Read-only path: hold the read lock briefly while opening the file so we
-            // don't race with a commit rename. Once the FD is returned the client holds
-            // an open inode; any subsequent atomic rename won't affect it (Unix semantics).
-            lock.readLock().lock()
-            return try {
-                if (!dbFile.exists()) throw FileNotFoundException("Database not yet synced")
-                ParcelFileDescriptor.open(dbFile, ParcelFileDescriptor.MODE_READ_ONLY)
-            } finally {
-                lock.readLock().unlock()
-            }
+            return fileStore.openForRead()
         }
 
-        // Write path: copy the live file into a per-request staging file so the caller
-        // can do random-access read+write freely. On close, the staging file is committed
-        // atomically and a WRITE-triggered sync is enqueued.
-        val staging = File(context!!.cacheDir, "staged_${System.nanoTime()}.kdbx")
-        lock.readLock().lock()
-        try {
-            if (dbFile.exists()) dbFile.copyTo(staging, overwrite = true)
-            else staging.createNewFile()
-        } finally {
-            lock.readLock().unlock()
-        }
-
-        return ParcelFileDescriptor.open(
-            staging,
-            ParcelFileDescriptor.MODE_READ_WRITE,
-            handler,
-        ) { error ->
-            if (error == null) commitStaging(staging) else staging.delete()
-        }
-    }
-
-    // ── Staging-file commit ───────────────────────────────────────────────
-
-    /**
-     * Called on the [handler] thread when the client closes its write FD cleanly.
-     * Atomically replaces the live database, marks it dirty, notifies observers,
-     * and enqueues a sync.
-     */
-    private fun commitStaging(staging: File) {
-        val dbFile = syncRepository.dbFile
-
-        lock.writeLock().lock()
-        try {
-            if (!staging.renameTo(dbFile)) {
-                // Cross-filesystem rename would fail — shouldn't happen (both paths are
-                // on internal storage) but handle it safely.
-                dbFile.writeBytes(staging.readBytes())
-                staging.delete()
-            }
-        } finally {
-            lock.writeLock().unlock()
-        }
-
-        syncRepository.markDirty()
-
-        // Notify any open cursors (e.g. the system picker) that metadata changed.
-        context!!.contentResolver.notifyChange(docUri(), null)
-
-        // Enqueue an expedited WorkManager job so the sync runs even if the app
-        // process dies immediately after this call.
-        SyncWorker.enqueueSyncNow(context!!, SyncTrigger.WRITE)
+        return fileStore.openForWrite(parsedMode, handler)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private fun docUri() = DocumentsContract.buildDocumentUri(
-        SyncRepository.DOCUMENTS_AUTHORITY, SyncRepository.DB_DOC_ID
+        DatabaseDocumentContract.DOCUMENTS_AUTHORITY, DatabaseDocumentContract.DB_DOC_ID
     )
 
     // ── Constants ─────────────────────────────────────────────────────────
