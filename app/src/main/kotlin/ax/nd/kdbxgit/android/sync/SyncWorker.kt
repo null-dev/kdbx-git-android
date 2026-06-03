@@ -112,6 +112,7 @@ class SyncWorker(
         private const val KEY_TRIGGER           = "trigger"
         private const val PERIODIC_WORK_NAME    = "kdbx_git_periodic_sync"
         private const val ONE_TIME_WORK_NAME    = "kdbx_git_one_time_sync"
+        internal val ONE_TIME_WORK_POLICY = ExistingWorkPolicy.APPEND_OR_REPLACE
 
         private val networkConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -119,7 +120,8 @@ class SyncWorker(
 
         /**
          * Enqueue an expedited one-time sync (for [SyncTrigger.WRITE] / [SyncTrigger.MANUAL]).
-         * Replaces any pending one-time request so rapid writes don't pile up.
+         * Appends instead of replacing so a self-push cannot cancel an in-flight upload
+         * before it confirms and records the server hash.
          */
         fun enqueueSyncNow(context: Context, trigger: SyncTrigger = SyncTrigger.MANUAL) {
             val request = OneTimeWorkRequestBuilder<SyncWorker>()
@@ -128,7 +130,7 @@ class SyncWorker(
                 .setInputData(workDataOf(KEY_TRIGGER to trigger.name))
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(ONE_TIME_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+                .enqueueUniqueWork(ONE_TIME_WORK_NAME, ONE_TIME_WORK_POLICY, request)
         }
 
         /**
